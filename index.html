@@ -248,15 +248,23 @@ function nextDay(){
    диапазона — предложить прибавку. */
 function suggest(ex){
   const L=lastEntry(ex.id);
-  if(!L) return {weight:ex.start, earned:false, prev:null};
-  const sets=L.entry.sets.filter(s=>s.w!=null && s.r!=null);
-  if(!sets.length) return {weight:ex.start, earned:false, prev:null};
-  const w=sets[0].w;
-  const all=sets.length>=ex.sets && sets.every(s=>s.r>=ex.hi);
-  if(ex.time) return {weight:0, earned:all, prev:L};
-  if(!all) return {weight:w, earned:false, prev:L};
+  if(!L) return {weight:ex.start, earned:false, prev:null, top:null, topN:0};
+  const sets = ex.time
+    ? L.entry.sets.filter(s=>s.r!=null)
+    : L.entry.sets.filter(s=>s.w!=null && s.r!=null);
+  if(!sets.length) return {weight:ex.start, earned:false, prev:null, top:null, topN:0};
+  if(ex.time){
+    const ok = sets.length>=ex.sets && sets.every(s=>s.r>=ex.hi);
+    return {weight:0, earned:ok, prev:L, top:null, topN:sets.length};
+  }
+  // Рабочий вес — максимальный за тренировку (у гравитрона наоборот: минимальный
+  // противовес). Разминочные подходы с меньшим весом в расчёте не участвуют.
+  const w = ex.assist ? Math.min(...sets.map(s=>s.w)) : Math.max(...sets.map(s=>s.w));
+  const top = sets.filter(s=>s.w===w);
+  const all = top.length>=ex.sets && top.every(s=>s.r>=ex.hi);
+  if(!all) return {weight:w, earned:false, prev:L, top:w, topN:top.length};
   const nw = ex.assist ? Math.max(0, round(w-ex.step,1)) : round(w+ex.step,1);
-  return {weight:nw, earned:true, prev:L};
+  return {weight:nw, earned:true, prev:L, top:w, topN:top.length};
 }
 
 /* ============================================================
@@ -493,7 +501,7 @@ function viewWorkout(){
     } else if(s.earned && ex.time){
       h+=`<div class="hint">Держишь ${ex.hi} сек во всех подходах — <b>пора добавить блин на спину</b>.</div>`;
     } else if(s.prev){
-      h+=`<div class="hint hold">Вес держим. Задача — добрать повторы до ${ex.hi}${ex.time?' сек':''} во всех подходах.</div>`;
+      h+=`<div class="hint hold">Вес держим${s.top!=null?' — рабочий <b>'+round(s.top,1)+' кг</b>':''}. Задача — добрать до ${ex.hi}${ex.time?' сек':' повторов'} во всех ${entry.sets.length} подходах${s.topN&&s.topN<ex.sets?' (в прошлый раз на рабочем весе было '+s.topN+')':''}.</div>`;
     }
     h+=`<div class="setgrid"><div></div><div class="hd">${unit}</div><div class="hd">${ex.time?'—':'повт'}</div><div class="hd">RPE</div></div>`;
     entry.sets.forEach((st,si)=>{
