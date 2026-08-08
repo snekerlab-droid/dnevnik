@@ -79,6 +79,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
   border-left:3px solid var(--good);background:var(--plane);color:var(--text-secondary);
 }
 .hint.hold{border-left-color:var(--axis)}
+.hint.over{border-left-color:var(--critical)}
 .hint b{color:var(--text-primary)}
 .setgrid{display:grid;grid-template-columns:22px 1fr 1fr 1fr;gap:6px;align-items:center;margin-bottom:6px}
 .setgrid .idx{font-size:12px;color:var(--muted);text-align:center}
@@ -172,22 +173,22 @@ summary::-webkit-details-marker{display:none}
    ============================================================ */
 const PROGRAM = {
   A: { name:'День A — Верх', ex:[
-    {id:'bench', n:'Жим лёжа',                      sets:3, lo:6,  hi:8,  step:2.5, start:75, rpe:'8–9', rest:150, note:'Все три подхода на рабочем весе'},
-    {id:'grav',  n:'Гравитрон / подтягивания',      sets:3, lo:6,  hi:8,  step:1,   start:14, rpe:'8–9', rest:120, assist:true, note:'Вес = противовес: меньше значит тяжелее'},
-    {id:'ohp',   n:'Жим над головой в тренажёре',   sets:3, lo:8,  hi:10, step:2.5, start:10, rpe:'8',   rest:120, note:'Hammer Iso-Lateral Shoulder Press. Записывай вес НА ОДНУ СТОРОНУ. Пустые рычаги уже дают ~4,5 кг'},
-    {id:'row',   n:'Горизонтальная тяга',           sets:3, lo:8,  hi:10, step:6.8, start:66, rpe:'8–9', rest:120, note:'Пауза 1 сек со сведёнными лопатками'},
-    {id:'lat',   n:'Махи в нижнем блоке',           sets:3, lo:12, hi:15, step:6.8, start:5,  rpe:'9',   rest:60,  note:'Одной рукой, вес на одну руку. Шаг стека 6,8 кг — расти сначала повторами'},
-    {id:'rear',  n:'Обратная бабочка',              sets:2, lo:12, hi:15, step:6.8, start:20, rpe:'9',   rest:60,  note:'В суперсете с махами. Локти почти прямые, руки строго в стороны'},
-    {id:'fly',   n:'Бабочка',                       sets:2, lo:12, hi:15, step:6.8, start:50, rpe:'9',   rest:60},
-    {id:'curl',  n:'Сгибание гантелей',             sets:2, lo:10, hi:12, step:2,   start:15, rpe:'9',   rest:60,  note:'Вес одной гантели'},
+    {id:'bench', n:'Жим лёжа',                      sets:3, lo:6,  hi:8,  step:2.5, start:75, rt:8.5, rpe:'8–9', rest:150, note:'Все три подхода на рабочем весе'},
+    {id:'grav',  n:'Гравитрон / подтягивания',      sets:3, lo:6,  hi:8,  step:1,   start:14, rt:8.5, rpe:'8–9', rest:120, assist:true, note:'Вес = противовес: меньше значит тяжелее'},
+    {id:'ohp',   n:'Жим над головой в тренажёре',   sets:3, lo:8,  hi:10, step:2.5, start:10, rt:8, rpe:'8',   rest:120, note:'Hammer Iso-Lateral Shoulder Press. Записывай вес НА ОДНУ СТОРОНУ. Пустые рычаги уже дают ~4,5 кг'},
+    {id:'row',   n:'Горизонтальная тяга',           sets:3, lo:8,  hi:10, step:6.8, start:66, rt:8.5, rpe:'8–9', rest:120, note:'Пауза 1 сек со сведёнными лопатками'},
+    {id:'lat',   n:'Махи в нижнем блоке',           sets:3, lo:12, hi:15, step:6.8, start:5,  rt:9, rpe:'9',   rest:60,  note:'Одной рукой, вес на одну руку. Шаг стека 6,8 кг — расти сначала повторами'},
+    {id:'rear',  n:'Обратная бабочка',              sets:2, lo:12, hi:15, step:6.8, start:20, rt:9, rpe:'9',   rest:60,  note:'В суперсете с махами. Локти почти прямые, руки строго в стороны'},
+    {id:'fly',   n:'Бабочка',                       sets:2, lo:12, hi:15, step:6.8, start:50, rt:9, rpe:'9',   rest:60},
+    {id:'curl',  n:'Сгибание гантелей',             sets:2, lo:10, hi:12, step:2,   start:15, rt:9, rpe:'9',   rest:60,  note:'Вес одной гантели'},
   ]},
   B: { name:'День B — Низ + кор', ex:[
-    {id:'squat', n:'Присед со штангой',             sets:3, lo:6,  hi:8,  step:2.5, start:95, rpe:'8',   rest:180, note:'Главное упражнение. В отказ не ходи'},
-    {id:'rdl',   n:'Румынская тяга',                sets:3, lo:8,  hi:10, step:2.5, start:50, rpe:'7',   rest:150, note:'Первые 2 недели — только техника'},
-    {id:'lunge', n:'Выпады на месте',               sets:3, lo:10, hi:10, step:2,   start:12, rpe:'8',   rest:90,  note:'Вес одной гири, повторы на каждую ногу'},
-    {id:'ham',   n:'Сгибание ног сидя',             sets:3, lo:10, hi:12, step:6.8, start:41, rpe:'9',   rest:90,  note:'Пауза 1 сек в сокращении'},
-    {id:'calf',  n:'Подъёмы на носки',              sets:3, lo:12, hi:15, step:6.8, start:40, rpe:'9',   rest:60,  note:'Пауза 2 сек внизу, в растяжении'},
-    {id:'tri',   n:'Разгибание в блоке из-за головы',sets:3,lo:10, hi:12, step:6.8, start:41, rpe:'9',   rest:60},
+    {id:'squat', n:'Присед со штангой',             sets:3, lo:6,  hi:8,  step:2.5, start:95, rt:8, rpe:'8',   rest:180, note:'Главное упражнение. В отказ не ходи'},
+    {id:'rdl',   n:'Румынская тяга',                sets:3, lo:8,  hi:10, step:2.5, start:50, rt:8, rpe:'8',   rest:150, note:'Спина прямая, таз назад. Круглится поясница — вес великий'},
+    {id:'lunge', n:'Выпады на месте',               sets:3, lo:10, hi:10, step:2,   start:12, rt:8, rpe:'8',   rest:90,  note:'Вес одной гири, повторы на каждую ногу'},
+    {id:'ham',   n:'Сгибание ног сидя',             sets:3, lo:10, hi:12, step:6.8, start:41, rt:9, rpe:'9',   rest:90,  note:'Пауза 1 сек в сокращении'},
+    {id:'calf',  n:'Подъёмы на носки',              sets:3, lo:12, hi:15, step:6.8, start:40, rt:9, rpe:'9',   rest:60,  note:'Пауза 2 сек внизу, в растяжении'},
+    {id:'tri',   n:'Разгибание в блоке из-за головы',sets:3,lo:10, hi:12, step:6.8, start:41, rt:9, rpe:'9',   rest:60},
     {id:'plank', n:'Планка',                        sets:3, lo:30, hi:60, step:0,   start:0,  rpe:'—',   rest:45, time:true, note:'Секунды вместо повторов'},
   ]}
 };
@@ -244,27 +245,56 @@ function nextDay(){
   const ws=[...S.workouts].sort((a,b)=> b.date.localeCompare(a.date) || b.id-a.id);
   return ws[0].day==='A' ? 'B' : 'A';
 }
-/* Двойная прогрессия: если в прошлый раз все рабочие подходы достигли верха
-   диапазона — предложить прибавку. */
+/* Вес, при котором тот же подход дался бы на целевом RPE.
+   Через запас повторов: RIR = 10 − RPE, максимум по Эпли, обратный пересчёт. */
+function weightForRpe(w, r, rpe, target){
+  const rir=Math.max(0,10-rpe), tir=Math.max(0,10-target);
+  const max = w*(1+(r+rir)/30);
+  return max/(1+(r+tir)/30);
+}
+/* Прогрессия по двум осям: повторы (двойная прогрессия) и RPE.
+   Ушёл в отказ там, где цель 8 — подсказка снижает вес, а не добавляет. */
 function suggest(ex){
+  const none={weight:ex.start, mode:'first', prev:null, top:null, topN:0, rpe:null};
   const L=lastEntry(ex.id);
-  if(!L) return {weight:ex.start, earned:false, prev:null, top:null, topN:0};
+  if(!L) return none;
   const sets = ex.time
     ? L.entry.sets.filter(s=>s.r!=null)
     : L.entry.sets.filter(s=>s.w!=null && s.r!=null);
-  if(!sets.length) return {weight:ex.start, earned:false, prev:null, top:null, topN:0};
+  if(!sets.length) return none;
   if(ex.time){
     const ok = sets.length>=ex.sets && sets.every(s=>s.r>=ex.hi);
-    return {weight:0, earned:ok, prev:L, top:null, topN:sets.length};
+    return {weight:0, mode: ok?'up':'hold', prev:L, top:null, topN:sets.length, rpe:null};
   }
   // Рабочий вес — максимальный за тренировку (у гравитрона наоборот: минимальный
   // противовес). Разминочные подходы с меньшим весом в расчёте не участвуют.
   const w = ex.assist ? Math.min(...sets.map(s=>s.w)) : Math.max(...sets.map(s=>s.w));
   const top = sets.filter(s=>s.w===w);
-  const all = top.length>=ex.sets && top.every(s=>s.r>=ex.hi);
-  if(!all) return {weight:w, earned:false, prev:L, top:w, topN:top.length};
-  const nw = ex.assist ? Math.max(0, round(w-ex.step,1)) : round(w+ex.step,1);
-  return {weight:nw, earned:true, prev:L, top:w, topN:top.length};
+  const hitTop = top.length>=ex.sets && top.every(s=>s.r>=ex.hi);
+  const base = {prev:L, top:w, topN:top.length};
+
+  // RPE последнего рабочего подхода, у которого он заполнен
+  const rpeSet = [...top].reverse().find(s=>s.rpe!=null && s.rpe!=='');
+  const rpe = rpeSet ? parseFloat(rpeSet.rpe) : null;
+  const rt = ex.rt;
+
+  // Перебор по интенсивности — важнее, чем добор повторов
+  if(rpe!=null && rt!=null && rpe >= rt+1.5){
+    if(ex.assist){
+      const nw=round(w+ex.step,1);
+      return {...base, weight:nw, mode:'down', rpe};
+    }
+    const want=weightForRpe(w, rpeSet.r, rpe, rt);
+    const n=Math.round((want-w)/ex.step);
+    if(n===0) return {...base, weight:w, mode:'down-blocked', rpe};
+    return {...base, weight:round(w+n*ex.step,1), mode:'down', rpe};
+  }
+  if(!hitTop) return {...base, weight:w, mode:'hold', rpe};
+  // Верх диапазона взят. Насколько легко?
+  const easy = rpe!=null && rt!=null && rpe <= rt-1.5;
+  const k = easy ? 2 : 1;
+  const nw = ex.assist ? Math.max(0, round(w-ex.step*k,1)) : round(w+ex.step*k,1);
+  return {...base, weight:nw, mode: easy?'up2':'up', rpe};
 }
 
 /* ============================================================
@@ -496,12 +526,25 @@ function viewWorkout(){
     } else {
       h+=`<div class="prev">Первый раз. Стартовый ориентир: ${ex.time?ex.lo+'–'+ex.hi+' сек':ex.start+' кг'}</div>`;
     }
-    if(s.earned && !ex.time){
-      h+=`<div class="hint">Верх диапазона взят во всех подходах — <b>${ex.assist?'снижай противовес до '+s.weight+' кг':'ставь '+s.weight+' кг'}</b>. Повторы упадут к нижней границе, это нормально.</div>`;
-    } else if(s.earned && ex.time){
-      h+=`<div class="hint">Держишь ${ex.hi} сек во всех подходах — <b>пора добавить блин на спину</b>.</div>`;
-    } else if(s.prev){
-      h+=`<div class="hint hold">Вес держим${s.top!=null?' — рабочий <b>'+round(s.top,1)+' кг</b>':''}. Задача — добрать до ${ex.hi}${ex.time?' сек':' повторов'} во всех ${entry.sets.length} подходах${s.topN&&s.topN<ex.sets?' (в прошлый раз на рабочем весе было '+s.topN+')':''}.</div>`;
+    if(s.prev){
+      const wrk = s.top!=null ? '<b>'+round(s.top,1)+' кг</b>' : '';
+      if(s.mode==='down'){
+        h+=`<div class="hint over">Прошлый раз ты закрыл на <b>RPE ${s.rpe}</b>, а цель здесь <b>RPE ${ex.rt}</b> — это два повтора в запасе.
+            ${ex.assist?'Добавь противовес до <b>'+s.weight+' кг</b>':'Ставь <b>'+s.weight+' кг</b>'}, так подход попадёт в цель.
+            Отказ на этом упражнении съедает восстановление, а роста почти не добавляет.</div>`;
+      } else if(s.mode==='down-blocked'){
+        h+=`<div class="hint over">Прошлый раз <b>RPE ${s.rpe}</b> при цели <b>${ex.rt}</b>. Снизить не на чем — шаг стека ${ex.step} кг.
+            Оставь ${wrk} и заканчивай подход на два повтора раньше, чем откажут мышцы.</div>`;
+      } else if(s.mode==='up2'){
+        h+=`<div class="hint">Верх диапазона взят легко (RPE ${s.rpe} при цели ${ex.rt}) — прибавляй сразу два шага,
+            ${ex.assist?'противовес до <b>'+s.weight+' кг</b>':'<b>'+s.weight+' кг</b>'}.</div>`;
+      } else if(s.mode==='up' && ex.time){
+        h+=`<div class="hint">Держишь ${ex.hi} сек во всех подходах — <b>пора добавить блин на спину</b>.</div>`;
+      } else if(s.mode==='up'){
+        h+=`<div class="hint">Верх диапазона взят во всех подходах — <b>${ex.assist?'снижай противовес до '+s.weight+' кг':'ставь '+s.weight+' кг'}</b>. Повторы упадут к нижней границе, это нормально.</div>`;
+      } else {
+        h+=`<div class="hint hold">Вес держим${wrk?' — рабочий '+wrk:''}. Задача — добрать до ${ex.hi}${ex.time?' сек':' повторов'} во всех ${entry.sets.length} подходах${s.topN&&s.topN<ex.sets?' (в прошлый раз на рабочем весе было '+s.topN+')':''}.</div>`;
+      }
     }
     h+=`<div class="setgrid"><div></div><div class="hd">${unit}</div><div class="hd">${ex.time?'—':'повт'}</div><div class="hd">RPE</div></div>`;
     entry.sets.forEach((st,si)=>{
