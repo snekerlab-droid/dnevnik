@@ -81,6 +81,18 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .hint.hold{border-left-color:var(--axis)}
 .hint.over{border-left-color:var(--critical)}
 .hint b{color:var(--text-primary)}
+.coach{font-size:12.5px;border-radius:8px;padding:7px 9px;margin-bottom:8px;
+  background:var(--plane);color:var(--text-secondary);border-left:3px solid var(--series-1)}
+.coach b{color:var(--text-primary)}
+/* предписание на сегодня */
+.rx{background:var(--plane);border-radius:10px;padding:9px 11px;margin-bottom:8px}
+.rxlab{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:650}
+.rxval{font-size:19px;font-weight:660;letter-spacing:-.01em;margin-top:1px;font-variant-numeric:tabular-nums}
+.rxval .rxw{color:var(--series-1)}
+.rxrpe{font-size:12px;color:var(--text-secondary);margin-top:2px}
+.rxwarm{font-size:11.5px;color:var(--muted);margin-top:3px}
+.setgrid.warm .idx{color:var(--muted);font-weight:650;font-size:11px}
+.setgrid.warm input{opacity:.6;border-style:dashed}
 .setgrid{display:grid;grid-template-columns:22px 1fr 1fr 1fr;gap:6px;align-items:center;margin-bottom:6px}
 .setgrid .idx{font-size:12px;color:var(--muted);text-align:center}
 .setgrid .hd{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;text-align:center}
@@ -173,23 +185,43 @@ summary::-webkit-details-marker{display:none}
    ============================================================ */
 const PROGRAM = {
   A: { name:'День A — Верх', ex:[
-    {id:'bench', n:'Жим лёжа',                      sets:3, lo:6,  hi:8,  step:2.5, start:75, rt:8.5, rpe:'8–9', rest:150, note:'Все три подхода на рабочем весе'},
-    {id:'grav',  n:'Гравитрон / подтягивания',      sets:3, lo:6,  hi:8,  step:1,   start:14, rt:8.5, rpe:'8–9', rest:120, assist:true, note:'Вес = противовес: меньше значит тяжелее'},
-    {id:'ohp',   n:'Жим над головой в тренажёре',   sets:3, lo:8,  hi:10, step:2.5, start:10, rt:8, rpe:'8',   rest:120, note:'Hammer Iso-Lateral Shoulder Press. Записывай вес НА ОДНУ СТОРОНУ. Пустые рычаги уже дают ~4,5 кг'},
-    {id:'row',   n:'Горизонтальная тяга',           sets:3, lo:8,  hi:10, step:6.8, start:66, rt:8.5, rpe:'8–9', rest:120, note:'Пауза 1 сек со сведёнными лопатками'},
-    {id:'lat',   n:'Махи в нижнем блоке',           sets:3, lo:12, hi:15, step:6.8, start:5,  rt:9, rpe:'9',   rest:60,  note:'Одной рукой, вес на одну руку. Шаг стека 6,8 кг — расти сначала повторами'},
-    {id:'rear',  n:'Обратная бабочка',              sets:2, lo:12, hi:15, step:6.8, start:20, rt:9, rpe:'9',   rest:60,  note:'В суперсете с махами. Локти почти прямые, руки строго в стороны'},
-    {id:'fly',   n:'Бабочка',                       sets:2, lo:12, hi:15, step:6.8, start:50, rt:9, rpe:'9',   rest:60},
-    {id:'curl',  n:'Сгибание гантелей',             sets:2, lo:10, hi:12, step:2,   start:15, rt:9, rpe:'9',   rest:60,  note:'Вес одной гантели'},
+    {id:'bench', n:'Жим лёжа',                      sets:3, lo:6,  hi:8,  step:2.5, start:72.5, rt:8.5, rpe:'8–8,5', rest:150, warm:2,
+      note:'Все рабочие подходы на одном весе',
+      coach:'75×6 сейчас даётся на балл легче, чем месяц назад. Добери до 8 повторов, потом 77,5.'},
+    {id:'grav',  n:'Гравитрон / подтягивания',      sets:3, lo:6,  hi:8,  step:1,   start:11,  rt:8.5, rpe:'8–8,5', rest:120, warm:1, assist:true,
+      note:'Вес = противовес: меньше значит тяжелее',
+      coach:'Стоит на 11 кг три недели. Добавь в конце 2 негатива: запрыгни в верхнюю точку и опускайся 5 секунд. Это пробивает последние килограммы быстрее, чем снятие противовеса.'},
+    {id:'ohp',   n:'Жим над головой в тренажёре',   sets:3, lo:8,  hi:10, step:2.5, start:32.5, rt:8, rpe:'8', rest:120, warm:1,
+      note:'Hammer Iso-Lateral. Вес НА ОДНУ СТОРОНУ, пустые рычаги дают ~4,5 кг',
+      coach:'Единственная база, где ты сейчас регулярно перебираешь — 23 авг все три подхода ушли на RPE 9. Держи вес, пока 3×10 не пойдут на RPE 8.'},
+    {id:'row',   n:'Горизонтальная тяга',           sets:3, lo:8,  hi:10, step:6.8, start:73,  rt:8.5, rpe:'8–8,5', rest:120, warm:1,
+      note:'Пауза 1 сек со сведёнными лопатками',
+      coach:'Следующая плитка 79,8 — это сразу +9 %. Дорасти до 73×10 при RPE 8 во всех подходах, потом переходи и падай на 8 повторов.'},
+    {id:'lat',   n:'Махи в нижнем блоке',           sets:3, lo:12, hi:15, step:4, start:18,  rt:9, rpe:'9', rest:60,
+      note:'Одной рукой, вес на одну руку'},
+    {id:'rear',  n:'Обратная бабочка',              sets:3, lo:12, hi:15, step:5,   start:32,  rt:9, rpe:'9', rest:60,
+      note:'В суперсете с махами. Локти почти прямые, руки строго в стороны'},
+    {id:'fly',   n:'Бабочка',                       sets:3, lo:12, hi:15, step:6.8, start:70,  rt:9, rpe:'9', rest:60},
+    {id:'curl',  n:'Сгибание гантелей',             sets:3, lo:10, hi:12, step:2.5, start:17.5, rt:9, rpe:'9', rest:60,
+      note:'Вес одной гантели'},
   ]},
   B: { name:'День B — Низ + кор', ex:[
-    {id:'squat', n:'Присед со штангой',             sets:3, lo:6,  hi:8,  step:2.5, start:95, rt:8, rpe:'8',   rest:180, note:'Главное упражнение. В отказ не ходи'},
-    {id:'rdl',   n:'Румынская тяга',                sets:3, lo:8,  hi:10, step:2.5, start:50, rt:8, rpe:'8',   rest:150, note:'Спина прямая, таз назад. Круглится поясница — вес великий'},
-    {id:'lunge', n:'Выпады на месте',               sets:3, lo:10, hi:10, step:2,   start:12, rt:8, rpe:'8',   rest:90,  note:'Вес одной гири, повторы на каждую ногу'},
-    {id:'ham',   n:'Сгибание ног сидя',             sets:3, lo:10, hi:12, step:6.8, start:41, rt:9, rpe:'9',   rest:90,  note:'Пауза 1 сек в сокращении'},
-    {id:'calf',  n:'Подъёмы на носки',              sets:3, lo:12, hi:15, step:6.8, start:40, rt:9, rpe:'9',   rest:60,  note:'Пауза 2 сек внизу, в растяжении'},
-    {id:'tri',   n:'Разгибание в блоке из-за головы',sets:3,lo:10, hi:12, step:6.8, start:41, rt:9, rpe:'9',   rest:60},
-    {id:'plank', n:'Планка',                        sets:3, lo:30, hi:60, step:0,   start:0,  rpe:'—',   rest:45, time:true, note:'Секунды вместо повторов'},
+    {id:'squat', n:'Присед со штангой',             sets:3, lo:6,  hi:8,  step:2.5, start:100, rt:8, rpe:'8', rest:180, warm:2,
+      note:'Главное упражнение. В отказ не ходи',
+      coach:'100 кг сейчас идут на RPE 8,5–9. В конце июля те же 100 были десяткой — это и есть твой рост. Закрепи их на RPE 8, только потом 102,5.'},
+    {id:'rdl',   n:'Румынская тяга',                sets:3, lo:8,  hi:10, step:2.5, start:95,  rt:8, rpe:'8', rest:150, warm:2,
+      note:'Спина прямая, таз назад. Круглится поясница — вес великий',
+      coach:'21 авг последний подход ушёл на 9,5. Движение всё ещё новое, поясница прощает хуже всего — держи RPE 8.'},
+    {id:'lunge', n:'Выпады на месте',               sets:3, lo:10, hi:10, step:2,   start:12,  rt:8, rpe:'8', rest:90,
+      note:'Вес одной гири, повторы на каждую ногу'},
+    {id:'ham',   n:'Сгибание ног сидя',             sets:3, lo:10, hi:12, step:10, start:150, rt:9, rpe:'9', rest:90, warm:1,
+      note:'Пауза 1 сек в сокращении'},
+    {id:'calf',  n:'Подъёмы на носки',              sets:3, lo:12, hi:15, step:10, start:70,  rt:9, rpe:'9', rest:60,
+      note:'Пауза 2 сек внизу, в растяжении'},
+    {id:'tri',   n:'Разгибание в блоке из-за головы',sets:3,lo:10, hi:12, step:5, start:50,  rt:9, rpe:'9', rest:60},
+    {id:'plank', n:'Планка',                        sets:3, lo:30, hi:60, step:0,   start:0,   rpe:'—', rest:45, time:true,
+      note:'Секунды вместо повторов',
+      coach:'За 12 тренировок — ни одной записи. Кор остался единственной непроработанной зоной, а это три минуты в конце тренировки. Не пропускай.'},
   ]}
 };
 const EXBYID = {};
@@ -230,7 +262,18 @@ function cycleWeek(){
   if(!S.startDate) return 1;
   return Math.min(8, Math.floor(daysBetween(S.startDate, todayISO())/7)+1);
 }
-function isDeload(){ const w=cycleWeek(); return w===4||w===8; }
+function isDeload(){
+  if(S.deloadUntil && todayISO() <= S.deloadUntil) return true;
+  const w=cycleWeek(); return w===4||w===8;
+}
+function toggleDeload(){
+  if(S.deloadUntil && todayISO()<=S.deloadUntil){ S.deloadUntil=null; }
+  else {
+    const d=new Date(); d.setDate(d.getDate()+6);
+    S.deloadUntil=d.toISOString().slice(0,10);
+  }
+  save(); render('data');
+}
 function lastEntry(exId, beforeId){
   const ws=[...S.workouts].sort((a,b)=> b.date.localeCompare(a.date) || b.id-a.id);
   for(const w of ws){
@@ -259,8 +302,8 @@ function suggest(ex){
   const L=lastEntry(ex.id);
   if(!L) return none;
   const sets = ex.time
-    ? L.entry.sets.filter(s=>s.r!=null)
-    : L.entry.sets.filter(s=>s.w!=null && s.r!=null);
+    ? L.entry.sets.filter(s=>s.r!=null && !s.warm)
+    : L.entry.sets.filter(s=>s.w!=null && s.r!=null && !s.warm);
   if(!sets.length) return none;
   if(ex.time){
     const ok = sets.length>=ex.sets && sets.every(s=>s.r>=ex.hi);
@@ -290,6 +333,8 @@ function suggest(ex){
     return {...base, weight:round(w+n*ex.step,1), mode:'down', rpe};
   }
   if(!hitTop) return {...base, weight:w, mode:'hold', rpe};
+  // Повторы добраны, но усилие выше целевого — вес не растёт, пока не станет легче.
+  if(rpe!=null && rt!=null && rpe > rt) return {...base, weight:w, mode:'hold-rpe', rpe};
   // Верх диапазона взят. Насколько легко?
   const easy = rpe!=null && rt!=null && rpe <= rt-1.5;
   const k = easy ? 2 : 1;
@@ -495,8 +540,18 @@ function openWorkout(day, resume){
       PROGRAM[day].ex.map(ex=>{
         const s=suggest(ex);
         const w=isDeload()&&!ex.assist&&!ex.time ? round(s.weight*0.8,1) : s.weight;
-        return { ex:ex.id, sets:Array.from({length: isDeload()?Math.max(2,ex.sets-1):ex.sets},
-          ()=>({w: ex.time?null:w, r:null, rpe:null})) };
+        const nWork = isDeload()?Math.max(2,ex.sets-1):ex.sets;
+        const sets=[];
+        // Разминочные подходы — только для тяжёлой базы и только если вес известен
+        if(ex.warm && !ex.time && !ex.assist && w>0){
+          const pct=ex.warm===2?[0.55,0.80]:[0.70];
+          const reps=ex.warm===2?[8,5]:[6];
+          pct.forEach((k,i)=> sets.push({w:round(w*k,1), r:null, rpe:null, warm:true, tr:reps[i]}));
+        } else if(ex.warm && ex.assist && w>0){
+          sets.push({w:round(w+3,1), r:null, rpe:null, warm:true, tr:6});
+        }
+        for(let i=0;i<nWork;i++) sets.push({w: ex.time?null:w, r:null, rpe:null});
+        return { ex:ex.id, sets };
       })
     };
     S.draft=draftLive; save();
@@ -513,10 +568,23 @@ function viewWorkout(){
     const entry=d.entries[ei];
     const s=suggest(ex);
     const unit=ex.time?'сек':'кг';
+    const nWork=entry.sets.filter(x=>!x.warm).length;
+    const nWarm=entry.sets.length-nWork;
+    // Предписание на сегодня: подходы × повторы × вес
+    const targetReps = s.mode==='up'||s.mode==='up2' ? ex.lo : ex.hi;
+    const rx = ex.time
+      ? `${nWork} × ${ex.lo}–${ex.hi} сек`
+      : `${nWork} × ${targetReps} × <span class="rxw">${round(s.weight,1)} кг</span>`;
     h+=`<div class="card">
       <div class="exhead">
         <h3>${ei+1}. ${ex.n}</h3>
-        <div class="extarget">${entry.sets.length}×${ex.lo===ex.hi?ex.lo:ex.lo+'–'+ex.hi}${ex.time?' сек':''}${ex.rpe!=='—'?' · RPE '+ex.rpe:''}</div>
+        <div class="extarget">диапазон ${ex.lo===ex.hi?ex.lo:ex.lo+'–'+ex.hi}${ex.time?' сек':''}</div>
+      </div>
+      <div class="rx">
+        <div class="rxlab">Сегодня</div>
+        <div class="rxval">${rx}</div>
+        ${ex.rpe!=='—'?`<div class="rxrpe">RPE ${ex.rpe}${ex.rt?` · оставляй ${round(10-ex.rt,1)} повтора в запасе`:''}</div>`:''}
+        ${nWarm?`<div class="rxwarm">+ ${nWarm} разминочн${nWarm>1?'ых':'ый'} перед ними — они не в счёт</div>`:''}
       </div>`;
     if(s.prev){
       const ps=s.prev.entry.sets.filter(x=>x.w!=null||x.r!=null)
@@ -542,20 +610,26 @@ function viewWorkout(){
         h+=`<div class="hint">Держишь ${ex.hi} сек во всех подходах — <b>пора добавить блин на спину</b>.</div>`;
       } else if(s.mode==='up'){
         h+=`<div class="hint">Верх диапазона взят во всех подходах — <b>${ex.assist?'снижай противовес до '+s.weight+' кг':'ставь '+s.weight+' кг'}</b>. Повторы упадут к нижней границе, это нормально.</div>`;
+      } else if(s.mode==='hold-rpe'){
+        h+=`<div class="hint hold">Повторы ты добрал, но последний подход был на <b>RPE ${s.rpe}</b> при цели <b>${ex.rt}</b>.
+            Вес не растёт, пока те же ${ex.hi} повторов не пойдут на ${ex.rt}. Оставь ${wrk} ещё на тренировку.</div>`;
       } else {
-        h+=`<div class="hint hold">Вес держим${wrk?' — рабочий '+wrk:''}. Задача — добрать до ${ex.hi}${ex.time?' сек':' повторов'} во всех ${entry.sets.length} подходах${s.topN&&s.topN<ex.sets?' (в прошлый раз на рабочем весе было '+s.topN+')':''}.</div>`;
+        h+=`<div class="hint hold">Вес держим${wrk?' — рабочий '+wrk:''}. Задача — добрать до ${ex.hi}${ex.time?' сек':' повторов'} во всех ${nWork} подходах${s.topN&&s.topN<ex.sets?' (в прошлый раз на рабочем весе было '+s.topN+')':''}.</div>`;
       }
     }
+    if(ex.coach) h+=`<div class="coach"><b>Заметка тренера.</b> ${ex.coach}</div>`;
     h+=`<div class="setgrid"><div></div><div class="hd">${unit}</div><div class="hd">${ex.time?'—':'повт'}</div><div class="hd">RPE</div></div>`;
+    let wi=0;
     entry.sets.forEach((st,si)=>{
       const filled = st.r!=null;
-      h+=`<div class="setgrid ${filled?'done':''}">
-        <div class="idx">${si+1}</div>
+      if(!st.warm) wi++;
+      h+=`<div class="setgrid ${filled?'done':''} ${st.warm?'warm':''}">
+        <div class="idx">${st.warm?'Р':wi}</div>
         ${ex.time
           ? `<input disabled value="—" style="opacity:.35">
              <input type="number" inputmode="numeric" placeholder="сек" value="${st.r??''}" oninput="setVal(${ei},${si},'r',this.value)">`
           : `<input type="number" inputmode="decimal" step="0.5" placeholder="${s.weight||''}" value="${st.w??''}" oninput="setVal(${ei},${si},'w',this.value)">
-             <input type="number" inputmode="numeric" placeholder="${ex.lo}" value="${st.r??''}" oninput="setVal(${ei},${si},'r',this.value)">`}
+             <input type="number" inputmode="numeric" placeholder="${st.warm?(st.tr||6):targetReps}" value="${st.r??''}" oninput="setVal(${ei},${si},'r',this.value)">`}
         <select onchange="setVal(${ei},${si},'rpe',this.value)">
           <option value=""${!st.rpe?' selected':''}>—</option>
           ${[6,7,7.5,8,8.5,9,9.5,10].map(v=>`<option value="${v}"${String(st.rpe)===String(v)?' selected':''}>${v}</option>`).join('')}
@@ -584,13 +658,13 @@ function setVal(ei,si,k,v){
 }
 function addSet(ei){
   const d=draftLive||S.draft, arr=d.entries[ei].sets;
-  const last=arr[arr.length-1];
+  const last=[...arr].reverse().find(x=>!x.warm)||arr[arr.length-1];
   arr.push({w:last?last.w:null, r:null, rpe:null});
   S.draft=d; save(); render('workout');
 }
 function delSet(ei){
-  const d=draftLive||S.draft;
-  if(d.entries[ei].sets.length>1) d.entries[ei].sets.pop();
+  const d=draftLive||S.draft, arr=d.entries[ei].sets;
+  if(arr.filter(x=>!x.warm).length>1) arr.pop();
   S.draft=d; save(); render('workout');
 }
 function finishWorkout(){
@@ -716,6 +790,11 @@ function viewData(){
     Недели 4 и 8 — разгрузочные, приложение само подставит меньший вес и уберёт один подход.</p>
     <div style="height:8px"></div>
     <button class="btn sec" onclick="resetCycle()">Начать цикл заново с сегодня</button>
+    <div style="height:8px"></div>
+    <button class="btn ${(S.deloadUntil&&todayISO()<=S.deloadUntil)?'':'sec'}" onclick="toggleDeload()">
+      ${(S.deloadUntil&&todayISO()<=S.deloadUntil)?'Разгрузка включена до '+fmtDate(S.deloadUntil)+' — выключить':'Сделать эту неделю разгрузочной'}
+    </button>
+    <div class="tiny" style="margin-top:8px">В разгрузку приложение само ставит на подход меньше и вес на 20 % ниже. Целевой RPE — 6, никакого отказа.</div>
   </div>
   <div class="card">
     <h2>Опасная зона</h2>
