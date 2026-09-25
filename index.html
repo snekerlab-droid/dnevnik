@@ -198,8 +198,9 @@ summary::-webkit-details-marker{display:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'2.0', date:'2026-09-04'};
+const BUILD = {v:'2.1', date:'2026-09-26'};
 const CHANGELOG = [
+  {v:'2.1', d:'2026-09-26', t:'Исправления. Цикл больше не застревает на 8-й неделе в вечной разгрузке: после 8-й недели начинается новый цикл с 1-й. Разгрузочные тренировки помечаются и не учитываются в подсказке веса, так что после разгрузки вес возвращается к рабочему, а не остаётся на 80 %. Дата тренировки считается по местному времени, а не по UTC. Убраны устаревшие заметки тренера, привязанные к 30 августа.'},
   {v:'2.0', d:'2026-09-04', t:'Новая программа на 3 дня вместо 2 (присед+жим / тяга+румынская / ноги-добивка) под аудит зала. Планка убрана. «Сгибание ног сидя» переименовано в «Разгибание ног» — это был квадрицепс, не хамстринг, вес там в фунтах. Добавлены настоящее сгибание ног, ягодичный тренажёр и Т-гриф (чередуется с тягой блоком через неделю). Разминочные подходы больше не логируются в приложении — делай их как обычно, просто не записывай.'},
   {v:'1.6', d:'2026-08-25', t:'Кнопка принудительного обновления и автопроверка новой версии при запуске — приложение само скажет, когда я что-то поменял'},
   {v:'1.5', d:'2026-08-25', t:'Номер версии на этой вкладке — теперь видно, дошло ли обновление'},
@@ -247,8 +248,7 @@ const PROGRAM = {
       note:'Главное упражнение дня, делай первым. В отказ не ходи',
       coach:'Дошёл до 105×6 при RPE 8 — держи вес, пока 3×6–8 не станет стабильно на RPE 8 во всех подходах, потом следующий шаг.'},
     {id:'bench', n:'Жим лёжа',                      sets:3, lo:6,  hi:8,  step:2.5, start:75,  rt:8.5, rpe:'8–8,5', rest:150,
-      note:'Все рабочие подходы на одном весе',
-      coach:'30 августа сделал 77,5×6 на RPE 8,5, но всего 2 подхода вместо 3 — подтверди на всех трёх, прежде чем это станет новым рабочим весом.'},
+      note:'Все рабочие подходы на одном весе'},
     {id:'ohp',   n:'Жим над головой в тренажёре',   sets:3, lo:8,  hi:10, step:2.5, start:32.5, rt:8, rpe:'8', rest:120,
       note:'Hammer Iso-Lateral. Вес НА ОДНУ СТОРОНУ, пустые рычаги дают ~4,5 кг',
       coach:'Уже больше двух недель все подходы держатся на RPE 8,5–9 при цели 8 — единственная база, где это никак не проходит. Вес специально не растёт, ничего форсировать не нужно.'},
@@ -266,13 +266,11 @@ const PROGRAM = {
       note:'Вес = противовес: меньше значит тяжелее',
       coach:'В конце последнего подхода добавляй 2 негативных повторения: запрыгни в верхнюю точку и опускайся 5 секунд. Это правило постоянное, не только пока вес не идёт.'},
     {id:'row',   n:'Горизонтальная тяга (блок)',    sets:3, lo:8,  hi:10, step:6.8, start:79.8, rt:8.5, rpe:'8–8,5', rest:120,
-      note:'Пауза 1 сек со сведёнными лопатками. Чередуется через неделю с Т-грифом',
-      coach:'30 августа впервые взял 79,8, но только 2 подхода вместо 3 — подтверди на всех трёх, прежде чем идти дальше.'},
+      note:'Пауза 1 сек со сведёнными лопатками. Чередуется через неделю с Т-грифом'},
     {id:'rear',  n:'Обратная бабочка',              sets:3, lo:12, hi:15, step:5,   start:32,  rt:9, rpe:'9', rest:60,
       note:'Локти почти прямые, руки строго в стороны'},
     {id:'curl',  n:'Сгибание гантелей',             sets:3, lo:10, hi:12, step:2.5, start:17.5, rt:9, rpe:'9', rest:60,
-      note:'Вес одной гантели',
-      coach:'Приложение сегодня подставит 15 кг — это подхватилось с укороченной тренировки 30 августа. Смело ставь 17,5, до этого ты справлялся с ним увереннее.'},
+      note:'Вес одной гантели'},
   ]},
 
   N: { name:'День 3 — Ноги (добивка)', ex:[
@@ -321,7 +319,8 @@ let S=loadState();
    УТИЛИТЫ
    ============================================================ */
 const MON=['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'];
-const todayISO=()=>new Date().toISOString().slice(0,10);
+function localISO(d){ const x=new Date(d); x.setMinutes(x.getMinutes()-x.getTimezoneOffset()); return x.toISOString().slice(0,10); }
+const todayISO=()=>localISO(new Date());
 function fmtDate(iso){ const d=new Date(iso+'T12:00:00'); return d.getDate()+' '+MON[d.getMonth()]; }
 function num(v){ const x=parseFloat(String(v).replace(',','.')); return isFinite(x)?x:null; }
 function round(x,p){ const m=Math.pow(10,p||1); return Math.round(x*m)/m; }
@@ -329,7 +328,8 @@ function e1rm(w,r){ return w*(1+r/30); }
 function daysBetween(a,b){ return Math.round((new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/86400000); }
 function cycleWeek(){
   if(!S.startDate) return 1;
-  return Math.min(8, Math.floor(daysBetween(S.startDate, todayISO())/7)+1);
+  // Цикл повторяется: после 8-й недели снова 1-я (раньше застревал на 8-й = вечная разгрузка)
+  return (Math.floor(Math.max(0,daysBetween(S.startDate, todayISO()))/7) % 8) + 1;
 }
 function isDeload(){
   if(S.deloadUntil && todayISO() <= S.deloadUntil) return true;
@@ -339,7 +339,7 @@ function toggleDeload(){
   if(S.deloadUntil && todayISO()<=S.deloadUntil){ S.deloadUntil=null; }
   else {
     const d=new Date(); d.setDate(d.getDate()+6);
-    S.deloadUntil=d.toISOString().slice(0,10);
+    S.deloadUntil=localISO(d);
   }
   save(); render('data');
 }
@@ -347,6 +347,8 @@ function lastEntry(exId, beforeId){
   const ws=[...S.workouts].sort((a,b)=> b.date.localeCompare(a.date) || b.id-a.id);
   for(const w of ws){
     if(beforeId && w.id>=beforeId) continue;
+    // Разгрузочные тренировки не показатель рабочего веса, прогрессию по ним не считаем
+    if(w.deload) continue;
     const e=w.entries.find(x=>x.ex===exId && x.sets.some(s=>s.w!=null||s.r!=null));
     if(e) return {entry:e, date:w.date};
   }
@@ -618,7 +620,7 @@ function openWorkout(day, resume){
     if(day==='T' && cycleWeek()%2===0){
       exList=exList.map(ex=> ex.id==='row' ? EXBYID['tbar'] : ex);
     }
-    draftLive={ id:Date.now(), date:todayISO(), day:day, entries:
+    draftLive={ id:Date.now(), date:todayISO(), day:day, deload:isDeload(), entries:
       exList.map(ex=>{
         const s=suggest(ex);
         const w=isDeload()&&!ex.assist&&!ex.time ? round(s.weight*0.8,1) : s.weight;
