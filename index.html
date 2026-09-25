@@ -198,8 +198,9 @@ summary::-webkit-details-marker{display:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'2.1', date:'2026-09-26'};
+const BUILD = {v:'2.2', date:'2026-09-26'};
 const CHANGELOG = [
+  {v:'2.2', d:'2026-09-26', t:'Прошлые тренировки можно править: в истории кнопка «изменить» открывает дату, длительность, вес, повторы и RPE каждого подхода, можно добавить или убрать подход и пометить тренировку как разгрузочную. Время тренировки: засекается при старте, во время тренировки видно, сколько прошло, после завершения показывается итог, а в истории у каждой тренировки видна длительность. У старых тренировок время можно вписать вручную.'},
   {v:'2.1', d:'2026-09-26', t:'Исправления. Цикл больше не застревает на 8-й неделе в вечной разгрузке: после 8-й недели начинается новый цикл с 1-й. Разгрузочные тренировки помечаются и не учитываются в подсказке веса, так что после разгрузки вес возвращается к рабочему, а не остаётся на 80 %. Дата тренировки считается по местному времени, а не по UTC. Убраны устаревшие заметки тренера, привязанные к 30 августа.'},
   {v:'2.0', d:'2026-09-04', t:'Новая программа на 3 дня вместо 2 (присед+жим / тяга+румынская / ноги-добивка) под аудит зала. Планка убрана. «Сгибание ног сидя» переименовано в «Разгибание ног» — это был квадрицепс, не хамстринг, вес там в фунтах. Добавлены настоящее сгибание ног, ягодичный тренажёр и Т-гриф (чередуется с тягой блоком через неделю). Разминочные подходы больше не логируются в приложении — делай их как обычно, просто не записывай.'},
   {v:'1.6', d:'2026-08-25', t:'Кнопка принудительного обновления и автопроверка новой версии при запуске — приложение само скажет, когда я что-то поменял'},
@@ -325,6 +326,7 @@ function fmtDate(iso){ const d=new Date(iso+'T12:00:00'); return d.getDate()+' '
 function num(v){ const x=parseFloat(String(v).replace(',','.')); return isFinite(x)?x:null; }
 function round(x,p){ const m=Math.pow(10,p||1); return Math.round(x*m)/m; }
 function e1rm(w,r){ return w*(1+r/30); }
+function fmtDur(m){ if(m==null||!isFinite(m)) return ''; m=Math.round(m); if(m<60) return m+' мин'; return Math.floor(m/60)+' ч '+String(m%60).padStart(2,'0')+' мин'; }
 function daysBetween(a,b){ return Math.round((new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/86400000); }
 function cycleWeek(){
   if(!S.startDate) return 1;
@@ -570,6 +572,19 @@ function viewHome(){
   const nd=nextDay();
   const dl=isDeload();
   let h='';
+  const jf=justFinished!=null && S.workouts.find(w=>w.id===justFinished);
+  if(jf){
+    const n=jf.entries.reduce((a,e)=>a+e.sets.length,0);
+    const ton=jf.entries.reduce((a,e)=>a+e.sets.reduce((x,s)=>x+((s.w||0)*(s.r||0)),0),0);
+    h+=`<div class="card">
+      <div class="exhead"><h2 style="margin:0">Тренировка завершена</h2><button class="btn ghost" onclick="justFinished=null;render('home')">закрыть</button></div>
+      <p class="small" style="margin-top:6px">${PROGRAM[jf.day].name}</p>
+      <div class="tiles" style="margin-top:10px">
+        <div class="tile"><div class="lab">Время</div><div class="val" style="font-size:17px">${jf.duration!=null?fmtDur(jf.duration):'—'}</div></div>
+        <div class="tile"><div class="lab">Подходов</div><div class="val">${n}</div></div>
+        <div class="tile"><div class="lab">Тоннаж</div><div class="val">${Math.round(ton)}<small> кг</small></div></div>
+      </div></div>`;
+  }
   h+=statTiles();
   if(S.draft){
     h+=`<div class="card">
@@ -599,8 +614,9 @@ function viewHome(){
     const n=w.entries.reduce((a,e)=>a+e.sets.filter(s=>s.w!=null&&s.r!=null).length,0);
     const ton=w.entries.reduce((a,e)=>a+e.sets.reduce((x,s)=>x+((s.w||0)*(s.r||0)),0),0);
     return `<div class="hist"><div><b>${PROGRAM[w.day].name.replace(' — ',' · ')}</b>
-      <div class="tiny">${fmtDate(w.date)} · ${n} подходов · ${Math.round(ton)} кг тоннаж</div></div>
-      <button class="btn ghost" onclick="delWorkout(${w.id})">удалить</button></div>`;
+      <div class="tiny">${fmtDate(w.date)}${w.duration!=null?' · '+fmtDur(w.duration):''} · ${n} подходов · ${Math.round(ton)} кг тоннаж${w.deload?' · разгрузка':''}</div></div>
+      <div style="display:flex;flex:0 0 auto"><button class="btn ghost" onclick="editWorkout(${w.id})">изменить</button>
+      <button class="btn ghost" onclick="delWorkout(${w.id})">удалить</button></div></div>`;
   }).join('');
   h+=`</div>`;
   return h;
@@ -620,7 +636,7 @@ function openWorkout(day, resume){
     if(day==='T' && cycleWeek()%2===0){
       exList=exList.map(ex=> ex.id==='row' ? EXBYID['tbar'] : ex);
     }
-    draftLive={ id:Date.now(), date:todayISO(), day:day, deload:isDeload(), entries:
+    draftLive={ id:Date.now(), date:todayISO(), day:day, deload:isDeload(), startedAt:Date.now(), entries:
       exList.map(ex=>{
         const s=suggest(ex);
         const w=isDeload()&&!ex.assist&&!ex.time ? round(s.weight*0.8,1) : s.weight;
@@ -632,6 +648,7 @@ function openWorkout(day, resume){
     };
     S.draft=draftLive; save();
   }
+  justFinished=null;
   render('workout');
 }
 function dropDraft(){ S.draft=null; draftLive=null; save(); render('home'); }
@@ -639,7 +656,7 @@ function viewWorkout(){
   const d=draftLive||S.draft; if(!d){ return viewHome(); }
   const prog=PROGRAM[d.day];
   let h=`<div class="card"><h2 style="margin-bottom:4px">${prog.name}</h2>
-    <div class="tiny">${fmtDate(d.date)} · неделя ${cycleWeek()} цикла${isDeload()?' · разгрузка':''}</div></div>`;
+    <div class="tiny">${fmtDate(d.date)} · неделя ${cycleWeek()} цикла${isDeload()?' · разгрузка':''}${d.startedAt?' · идёт <b id="elapsed">'+fmtDur((Date.now()-d.startedAt)/60000)+'</b>':''}</div></div>`;
   d.entries.forEach((entry,ei)=>{
     const ex=EXBYID[entry.ex];
     const s=suggest(ex);
@@ -748,10 +765,87 @@ function finishWorkout(){
   d.entries.forEach(e=>{ e.sets=e.sets.filter(s=>s.r!=null); });
   d.entries=d.entries.filter(e=>e.sets.length);
   if(!d.entries.length){ alert('Не заполнено ни одного подхода.'); return; }
+  if(d.startedAt){ d.duration=Math.max(1,Math.round((Date.now()-d.startedAt)/60000)); delete d.startedAt; }
+  justFinished=d.id;
   S.workouts.push(d);
   if(!S.startDate) S.startDate=d.date;
   S.draft=null; draftLive=null; save(); stopTimer(); render('home');
 }
+/* ============================================================
+   ЭКРАН: ПРАВКА ПРОШЛОЙ ТРЕНИРОВКИ
+   Работаем с копией; в историю попадает только по кнопке «Сохранить».
+   ============================================================ */
+let editBuf=null;
+function editWorkout(id){
+  const w=S.workouts.find(x=>x.id===id); if(!w) return;
+  editBuf=JSON.parse(JSON.stringify(w));
+  render('edit');
+}
+function exName(id){ return (EXBYID[id]&&EXBYID[id].n)||id; }
+function viewEdit(){
+  const d=editBuf; if(!d) return viewHome();
+  let h=`<div class="card"><h2 style="margin-bottom:8px">${(PROGRAM[d.day]||{name:'Тренировка'}).name}</h2>
+    <div class="setgrid" style="grid-template-columns:1fr 1fr;gap:8px">
+      <div class="hd">Дата</div><div class="hd">Длительность, мин</div>
+    </div>
+    <div class="setgrid" style="grid-template-columns:1fr 1fr;gap:8px">
+      <input type="date" value="${d.date}" onchange="editBuf.date=this.value||editBuf.date">
+      <input type="number" inputmode="numeric" placeholder="—" value="${d.duration??''}" oninput="editBuf.duration=num(this.value)">
+    </div>
+    <label class="small" style="display:flex;gap:8px;align-items:center;margin-top:10px">
+      <input type="checkbox" style="width:auto" ${d.deload?'checked':''} onchange="editBuf.deload=this.checked">
+      Разгрузочная (не учитывать в подсказке веса)
+    </label></div>`;
+  d.entries.forEach((entry,ei)=>{
+    const ex=EXBYID[entry.ex]||{};
+    h+=`<div class="card"><h3 style="margin:0 0 8px">${ei+1}. ${exName(entry.ex)}</h3>
+      <div class="setgrid"><div></div><div class="hd">${ex.time?'—':'кг'}</div><div class="hd">${ex.time?'сек':'повт'}</div><div class="hd">RPE</div></div>`;
+    entry.sets.forEach((st,si)=>{
+      h+=`<div class="setgrid">
+        <div class="idx">${si+1}</div>
+        ${ex.time?`<input disabled value="—" style="opacity:.35">`
+          :`<input type="number" inputmode="decimal" step="0.5" value="${st.w??''}" oninput="editSet(${ei},${si},'w',this.value)">`}
+        <input type="number" inputmode="numeric" value="${st.r??''}" oninput="editSet(${ei},${si},'r',this.value)">
+        <select onchange="editSet(${ei},${si},'rpe',this.value)">
+          <option value=""${!st.rpe?' selected':''}>—</option>
+          ${[6,7,7.5,8,8.5,9,9.5,10].map(v=>`<option value="${v}"${String(st.rpe)===String(v)?' selected':''}>${v}</option>`).join('')}
+        </select></div>`;
+    });
+    h+=`<div class="row" style="margin-top:8px">
+      <button class="btn ghost" style="flex:0 0 auto" onclick="editAddSet(${ei})">+ подход</button>
+      <button class="btn ghost" style="flex:0 0 auto" onclick="editDelSet(${ei})">− подход</button></div>
+      <div class="tiny" style="margin-top:4px">Подход без повторов при сохранении удалится.</div></div>`;
+  });
+  h+=`<div class="card">
+    <button class="btn" onclick="saveEdit()">Сохранить изменения</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="editBuf=null;render('home')">Отмена</button></div>`;
+  return h;
+}
+function editSet(ei,si,k,v){
+  editBuf.entries[ei].sets[si][k] = (v===''||v==null) ? null : (k==='rpe'? v : num(v));
+}
+function editAddSet(ei){
+  const arr=editBuf.entries[ei].sets, last=arr[arr.length-1];
+  arr.push({w:last?last.w:null, r:null, rpe:null});
+  render('edit');
+}
+function editDelSet(ei){
+  const arr=editBuf.entries[ei].sets;
+  if(arr.length>1) arr.pop();
+  render('edit');
+}
+function saveEdit(){
+  const d=editBuf; if(!d) return;
+  d.entries.forEach(e=>{ e.sets=e.sets.filter(s=>s.r!=null); });
+  d.entries=d.entries.filter(e=>e.sets.length);
+  if(!d.entries.length){ alert('Не осталось ни одного подхода. Если тренировка не нужна, удали её из истории.'); return; }
+  if(d.duration!=null && !(d.duration>0)) d.duration=null;
+  const i=S.workouts.findIndex(w=>w.id===d.id);
+  if(i<0){ editBuf=null; render('home'); return; }
+  S.workouts[i]=d; editBuf=null; save(); render('home');
+}
+
 function delWorkout(id){
   if(!confirm('Удалить эту тренировку?')) return;
   S.workouts=S.workouts.filter(w=>w.id!==id); save(); render('home');
@@ -927,11 +1021,11 @@ function wipe(){
 /* ============================================================
    РОУТЕР
    ============================================================ */
-let tab='home';
+let tab='home', justFinished=null;
 function render(t){
   if(t) tab=t;
   const v=document.getElementById('view');
-  const map={home:viewHome, workout:viewWorkout, progress:viewProgress, body:viewBody, data:viewData};
+  const map={home:viewHome, workout:viewWorkout, progress:viewProgress, body:viewBody, data:viewData, edit:viewEdit};
   const banner = newVersion
     ? `<div class="upd"><div><b>Есть версия ${newVersion}</b><div class="tiny" style="margin-top:1px">У тебя ${BUILD.v}. Записи не потеряются.</div></div>
        <button class="updbtn" onclick="forceUpdate()">Обновить</button></div>` : '';
@@ -942,7 +1036,7 @@ function render(t){
     if(w){ w.dataset.pts=host.dataset.chart; w.dataset.unit=host.dataset.unit||''; }
   });
   wireCharts();
-  const titles={home:'Дневник тренировок',workout:'Тренировка',progress:'Прогресс',body:'Тело и замеры',data:'Данные'};
+  const titles={home:'Дневник тренировок',workout:'Тренировка',progress:'Прогресс',body:'Тело и замеры',data:'Данные',edit:'Правка тренировки'};
   document.getElementById('hTitle').textContent=titles[tab]||'Дневник';
   const d=new Date();
   document.getElementById('hSub').textContent =
@@ -953,9 +1047,13 @@ function render(t){
 document.querySelectorAll('nav button').forEach(b=>{
   b.addEventListener('click',()=>{
     if(tab==='workout' && b.dataset.tab!=='workout'){ /* черновик уже сохранён */ }
+    if(tab==='edit') editBuf=null;
     render(b.dataset.tab);
   });
 });
+// Таймер длительности в шапке тренировки
+setInterval(()=>{ const el=document.getElementById('elapsed'); const d=draftLive||S.draft;
+  if(el&&d&&d.startedAt) el.textContent=fmtDur((Date.now()-d.startedAt)/60000); },15000);
 // Telegram Mini App: если открыто внутри Telegram — развернуть на весь экран
 try{ const tg=window.Telegram&&window.Telegram.WebApp; if(tg){ tg.ready(); tg.expand(); } }catch(e){}
 render('home');
