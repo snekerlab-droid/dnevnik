@@ -216,8 +216,9 @@ body.dragging{-webkit-user-select:none;user-select:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'3.7', date:'2026-10-07'};
+const BUILD = {v:'3.8', date:'2026-10-07'};
 const CHANGELOG = [
+  {v:'3.8', d:'2026-10-07', t:'В дневнике питания страница больше не прыгает вверх при переносе продукта, смене граммов и удалении: остаётся там, где ты был.'},
   {v:'3.7', d:'2026-10-07', t:'Выбранный продукт сразу добавляется в приём пищи без подтверждения (порция по умолчанию, у продуктов без порции 100 г). Граммы меняются потом прямо в дневнике.'},
   {v:'3.6', d:'2026-10-07', t:'Перенос продуктов переделан: слева у каждой строки значок ⠿, за него тянешь продукт в другой приём пищи или на другое место внутри приёма, порядок сохраняется. Зажимать строку на секунду больше не нужно, поэтому на iPhone это работает надёжно. Список «Мои продукты» при добавлении еды теперь всегда по алфавиту и показывает все продукты.'},
   {v:'3.5', d:'2026-10-07', t:'Перенос продукта между приёмами пищи починен и сделан надёжнее: под названием продукта появилась ссылка «перенести» (выбор приёма из списка), а перетаскивание теперь срабатывает, даже если телефон прервал касание при отпускании пальца.'},
@@ -1563,6 +1564,8 @@ function stopScan(){
    ============================================================ */
 let tab='home', justFinished=null;
 function render(t){
+  // В дневнике питания перерисовка не должна бросать страницу вверх: запоминаем прокрутку
+  const keepY=(tab==='food'&&(!t||t==='food'))?window.scrollY:null;
   if(t) tab=t;
   const v=document.getElementById('view');
   const map={home:viewHome, workout:viewWorkout, progress:viewProgress, body:viewBody, food:viewFood, foodadd:viewFoodAdd, data:viewData, edit:viewEdit};
@@ -1583,7 +1586,8 @@ function render(t){
   document.getElementById('hSub').textContent =
     'Андрей · неделя '+cycleWeek()+' из 8'+(isDeload()?' · разгрузка':'')+' · '+d.getDate()+' '+MON[d.getMonth()];
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===(tab==='foodadd'?'food':tab)));
-  if(tab!=='workout') window.scrollTo(0,0);
+  if(keepY!=null) window.scrollTo(0,keepY);
+  else if(tab!=='workout') window.scrollTo(0,0);
 }
 document.querySelectorAll('nav button').forEach(b=>{
   b.addEventListener('click',()=>{
