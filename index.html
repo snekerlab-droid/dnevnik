@@ -214,8 +214,9 @@ body.dragging{-webkit-user-select:none;user-select:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'3.4', date:'2026-10-07'};
+const BUILD = {v:'3.5', date:'2026-10-07'};
 const CHANGELOG = [
+  {v:'3.5', d:'2026-10-07', t:'Перенос продукта между приёмами пищи починен и сделан надёжнее: под названием продукта появилась ссылка «перенести» (выбор приёма из списка), а перетаскивание теперь срабатывает, даже если телефон прервал касание при отпускании пальца.'},
   {v:'3.4', d:'2026-10-07', t:'Убраны сырые смеси для котлет из списка «мои продукты».'},
   {v:'3.3', d:'2026-10-07', t:'Добавлены сырые смеси для котлет (на 100 г сырого, без масла): лёгкая из филе индейки 110 ккал, классическая 200 ккал. Готовые котлеты уже были: сковорода считается с маслом, аэрогриль без масла.'},
   {v:'3.2', d:'2026-10-07', t:'В «мои продукты» добавлена жареная картошка на масле (на 100 г готовой: 129 ккал, Б 2,3, Ж 4,8, У 19,1), порция по умолчанию 250 г.'},
@@ -1153,14 +1154,15 @@ function viewFood(){
       <div class="mealhead"><h2 style="margin:0">${mn}</h2><span class="tiny">${ml.length?Math.round(mt.k)+' ккал':''}</span></div>
       ${ml.map(e=>{ const x=eCalc(e); return `<div class="hist" data-eid="${e.id}"><div style="flex:1;min-width:0" onclick="var i=this.parentNode.querySelector('.gin');i.focus();i.select()">
         <b>${esc(e.name)}</b>
-        <div class="tiny">${Math.round(x.k)} ккал · Б ${Math.round(x.p)} · Ж ${Math.round(x.f)} · У ${Math.round(x.c)}</div></div>
+        <div class="tiny">${Math.round(x.k)} ккал · Б ${Math.round(x.p)} · Ж ${Math.round(x.f)} · У ${Math.round(x.c)}</div>
+        <div class="tiny" style="position:relative;display:inline-block;color:var(--accent);margin-top:2px" onclick="event.stopPropagation()">перенести ▾<select onchange="foodMove('${e.id}',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0"><option value="">Перенести в…</option>${MEALS.filter(m=>m[0]!==mk).map(m=>`<option value="${m[0]}">${m[1]}</option>`).join('')}</select></div></div>
         <div style="display:flex;align-items:center;gap:4px;flex:0 0 auto"><input type="number" inputmode="decimal" class="gin" value="${round(e.g,1)}" onchange="foodSetG('${e.id}',this.value)"><span class="tiny">г</span>
         <button class="btn ghost" onclick="foodDel('${e.id}')">удалить</button></div></div>`; }).join('')}
       <div style="height:8px"></div>
       <button class="btn sec" onclick="foodOpenAdd('${mk}')">+ Добавить</button>
     </div>`;
   });
-  if(list.length) h+=`<div class="tiny" style="text-align:center;margin:-4px 0 12px">Граммы меняются прямо в строке. Зажми продукт на секунду и перетащи в другой приём пищи</div>`;
+  if(list.length) h+=`<div class="tiny" style="text-align:center;margin:-4px 0 12px">Граммы меняются прямо в строке. Чтобы перенести продукт, нажми «перенести» под его названием или зажми строку и перетащи</div>`;
   // графики за 14 дней
   const days=[]; for(let i=13;i>=0;i--) days.push(shiftDay(todayISO(),-i));
   const kp=[], pp=[];
@@ -1203,6 +1205,12 @@ function foodSetG(id,v){
   if(!(g>0)){ alert('Нужно число больше нуля.'); render('food'); return; }
   e.g=g; save(); render('food');
 }
+/* Перенос через выбор из списка (запасной способ, работает везде) */
+function foodMove(id,meal){
+  if(!meal) return;
+  const en=(FD().days[fDate()]||[]).find(x=>x.id===id); if(!en) return;
+  en.meal=meal; save(); render('food');
+}
 /* Перенос продукта между приёмами пищи: зажать и перетащить */
 let dragSt=null, lastTouch=0, suppressClickUntil=0, dragScroll=null;
 function dpt(e){ const t=(e.touches&&e.touches[0])||(e.changedTouches&&e.changedTouches[0])||e; return {x:t.clientX,y:t.clientY}; }
@@ -1210,7 +1218,7 @@ function dragBegin(e){
   if(tab!=='food') return;
   if(e.type==='mousedown'){ if(Date.now()-lastTouch<800||e.button!==0) return; } else lastTouch=Date.now();
   const row=e.target.closest&&e.target.closest('.hist[data-eid]');
-  if(!row||e.target.closest('button,input')) return;
+  if(!row||e.target.closest('button,input,select')) return;
   const p=dpt(e);
   dragSt={row:row,id:row.dataset.eid,x0:p.x,y0:p.y,x:p.x,y:p.y,active:false,ghost:null,target:null,l:0,t:0};
   dragSt.timer=setTimeout(dragActivate,e.type==='mousedown'?200:350);
@@ -1225,6 +1233,7 @@ function dragActivate(){
   g.style.width=r.width+'px'; g.style.left=r.left+'px'; g.style.top=r.top+'px';
   document.body.appendChild(g); d.ghost=g;
   d.row.style.opacity='.3';
+  ['touchmove','touchend','touchcancel'].forEach(t=>d.row.addEventListener(t,t==='touchmove'?dragMoveEv:dragEndEv,{passive:false}));
   document.body.classList.add('dragging');
   if(navigator.vibrate) try{ navigator.vibrate(25); }catch(e){}
   dragScroll=setInterval(()=>{
@@ -1240,6 +1249,7 @@ function dragHover(){
   document.querySelectorAll('.mealcard.droptarget').forEach(c=>{ if(c!==card) c.classList.remove('droptarget'); });
   if(card) card.classList.add('droptarget');
   d.target=card?card.dataset.meal:null;
+  if(d.target) d.last=d.target;
 }
 function dragMoveEv(e){
   const d=dragSt; if(!d) return;
@@ -1261,9 +1271,9 @@ function dragEndEv(e){
   document.body.classList.remove('dragging');
   document.querySelectorAll('.mealcard.droptarget').forEach(c=>c.classList.remove('droptarget'));
   dragSt=null;
-  if(e.type==='touchcancel') return;
   const en=(FD().days[fDate()]||[]).find(x=>x.id===d.id);
-  if(en&&d.target&&d.target!==en.meal){ en.meal=d.target; save(); render('food'); }
+  const tg=d.target||d.last;
+  if(en&&tg&&tg!==en.meal){ en.meal=tg; save(); render('food'); }
 }
 document.addEventListener('touchstart',dragBegin,{passive:true});
 document.addEventListener('touchmove',dragMoveEv,{passive:false});
