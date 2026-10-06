@@ -166,6 +166,15 @@ summary::-webkit-details-marker{display:none}
 .banner b{color:var(--text-primary)}
 .empty{text-align:center;color:var(--muted);font-size:13.5px;padding:26px 10px}
 .hidden{display:none !important}
+.bar{height:6px;background:var(--plane);border-radius:4px;overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;background:var(--series-1);border-radius:4px}
+.bar.over i{background:var(--critical)}
+.kbig{font-size:26px;font-weight:680;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.mrow{display:flex;justify-content:space-between;font-size:13px;margin-top:10px}
+input.left{text-align:left;padding:10px 12px}
+.pick{cursor:pointer}
+.pick:active{background:var(--plane)}
+.mealhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -191,6 +200,7 @@ summary::-webkit-details-marker{display:none}
   <button data-tab="home" class="on"><span class="ic">🏠</span>Главная</button>
   <button data-tab="progress"><span class="ic">📈</span>Прогресс</button>
   <button data-tab="body"><span class="ic">⚖️</span>Тело</button>
+  <button data-tab="food"><span class="ic">🍽️</span>Еда</button>
   <button data-tab="data"><span class="ic">⚙️</span>Данные</button>
 </nav>
 
@@ -198,8 +208,9 @@ summary::-webkit-details-marker{display:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'2.3', date:'2026-09-26'};
+const BUILD = {v:'2.4', date:'2026-10-07'};
 const CHANGELOG = [
+  {v:'2.4', d:'2026-10-07', t:'Новая вкладка «Еда»: дневник питания. Приёмы пищи (завтрак, обед, ужин, перекус), итоги калорий, белков, жиров и углеводов за день с полосками к цели, графики за 14 дней. Продукты ищутся в базе Open Food Facts по названию или штрихкоду (камерой), найденное сохраняется в «мои продукты». Можно ввести продукт вручную. Цели на день настраиваются.'},
   {v:'2.3', d:'2026-09-26', t:'История показывает все тренировки, а не только последние 12. Тренировки по старой программе подписаны просто «День A · Верх» и «День B · Низ + кор», без пометки «архив».'},
   {v:'2.2', d:'2026-09-26', t:'Прошлые тренировки можно править: в истории кнопка «изменить» открывает дату, длительность, вес, повторы и RPE каждого подхода, можно добавить или убрать подход и пометить тренировку как разгрузочную. Время тренировки: засекается при старте, во время тренировки видно, сколько прошло, после завершения показывается итог, а в истории у каждой тренировки видна длительность. У старых тренировок время можно вписать вручную.'},
   {v:'2.1', d:'2026-09-26', t:'Исправления. Цикл больше не застревает на 8-й неделе в вечной разгрузке: после 8-й недели начинается новый цикл с 1-й. Разгрузочные тренировки помечаются и не учитываются в подсказке веса, так что после разгрузки вес возвращается к рабочему, а не остаётся на 80 %. Дата тренировки считается по местному времени, а не по UTC. Убраны устаревшие заметки тренера, привязанные к 30 августа.'},
@@ -1020,13 +1031,320 @@ function wipe(){
 }
 
 /* ============================================================
+   ЭКРАН: ЕДА  (дневник питания, база Open Food Facts + свои продукты)
+   ============================================================ */
+const MEALS=[['b','Завтрак'],['l','Обед'],['d','Ужин'],['s','Перекус']];
+const DEF_GOALS={k:2200,p:160,f:70,c:230};
+function FD(){
+  if(!S.food||typeof S.food!=='object') S.food={};
+  const f=S.food;
+  if(!Array.isArray(f.products)) f.products=[];
+  if(!f.days||typeof f.days!=='object') f.days={};
+  if(!f.goals) f.goals=Object.assign({},DEF_GOALS);
+  return f;
+}
+let foodDate=null;
+function fDate(){ return foodDate||todayISO(); }
+function shiftDay(iso,n){ const d=new Date(iso+'T12:00:00'); d.setDate(d.getDate()+n); return localISO(d); }
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function eCalc(e){ const m=e.g/100; return {k:e.k*m, p:e.p*m, f:e.f*m, c:e.c*m}; }
+function dayTot(list){
+  const t={k:0,p:0,f:0,c:0};
+  list.forEach(e=>{ const x=eCalc(e); t.k+=x.k; t.p+=x.p; t.f+=x.f; t.c+=x.c; });
+  return t;
+}
+function bar(val,goal,overBad){
+  const pct=goal>0?Math.min(100,val/goal*100):0;
+  const over=overBad&&goal>0&&val>goal*1.05;
+  return '<div class="bar'+(over?' over':'')+'"><i style="width:'+pct.toFixed(0)+'%"></i></div>';
+}
+function dayLabel(iso){
+  const t=todayISO();
+  if(iso===t) return 'Сегодня';
+  if(iso===shiftDay(t,-1)) return 'Вчера';
+  return fmtDate(iso);
+}
+function viewFood(){
+  const F=FD(), date=fDate(), list=F.days[date]||[];
+  const tot=dayTot(list), g=F.goals;
+  const left=g.k-tot.k;
+  let h=`<div class="card">
+    <div class="row" style="align-items:center">
+      <button class="btn sec" style="flex:0 0 48px;padding:10px 0" onclick="foodSetDate('${shiftDay(date,-1)}')">‹</button>
+      <div style="text-align:center"><b>${dayLabel(date)}</b><div class="tiny">${fmtDate(date)} ${date.slice(0,4)}</div></div>
+      <button class="btn sec" style="flex:0 0 48px;padding:10px 0" onclick="foodSetDate('${shiftDay(date,1)}')">›</button>
+    </div>
+    <div style="margin-top:8px"><input type="date" value="${date}" onchange="foodSetDate(this.value)"></div>
+  </div>`;
+  h+=`<div class="card">
+    <div class="kbig">${Math.round(tot.k)}<small style="font-size:13px;font-weight:500;color:var(--muted)"> / ${g.k} ккал</small></div>
+    ${bar(tot.k,g.k,true)}
+    <div class="tiny" style="margin-top:4px">${left>=0?'Осталось '+Math.round(left)+' ккал':'Перебор на '+Math.round(-left)+' ккал'}</div>
+    <div class="mrow"><span>Белки</span><span><b>${Math.round(tot.p)}</b> / ${g.p} г</span></div>${bar(tot.p,g.p,false)}
+    <div class="mrow"><span>Жиры</span><span><b>${Math.round(tot.f)}</b> / ${g.f} г</span></div>${bar(tot.f,g.f,true)}
+    <div class="mrow"><span>Углеводы</span><span><b>${Math.round(tot.c)}</b> / ${g.c} г</span></div>${bar(tot.c,g.c,true)}
+    <details><summary>Цели на день</summary>
+      <div class="setgrid" style="grid-template-columns:repeat(4,1fr);margin-top:10px"><div class="hd">Ккал</div><div class="hd">Белки</div><div class="hd">Жиры</div><div class="hd">Углев.</div></div>
+      <div class="setgrid" style="grid-template-columns:repeat(4,1fr)">
+        <input type="number" inputmode="numeric" id="gK" value="${g.k}"><input type="number" inputmode="numeric" id="gP" value="${g.p}">
+        <input type="number" inputmode="numeric" id="gF" value="${g.f}"><input type="number" inputmode="numeric" id="gC" value="${g.c}">
+      </div>
+      <button class="btn sec" style="margin-top:6px" onclick="foodSaveGoals()">Сохранить цели</button>
+    </details>
+  </div>`;
+  MEALS.forEach(([mk,mn])=>{
+    const ml=list.filter(e=>e.meal===mk), mt=dayTot(ml);
+    h+=`<div class="card">
+      <div class="mealhead"><h2 style="margin:0">${mn}</h2><span class="tiny">${ml.length?Math.round(mt.k)+' ккал':''}</span></div>
+      ${ml.map(e=>{ const x=eCalc(e); return `<div class="hist"><div style="flex:1;min-width:0" onclick="foodEditG('${e.id}')">
+        <b>${esc(e.name)}</b>
+        <div class="tiny">${round(e.g,0)} г · ${Math.round(x.k)} ккал · Б ${Math.round(x.p)} · Ж ${Math.round(x.f)} · У ${Math.round(x.c)}</div></div>
+        <button class="btn ghost" onclick="foodDel('${e.id}')">удалить</button></div>`; }).join('')}
+      <div style="height:8px"></div>
+      <button class="btn sec" onclick="foodOpenAdd('${mk}')">+ Добавить</button>
+    </div>`;
+  });
+  if(list.length) h+=`<div class="tiny" style="text-align:center;margin:-4px 0 12px">Нажми на продукт, чтобы поменять граммы</div>`;
+  // графики за 14 дней
+  const days=[]; for(let i=13;i>=0;i--) days.push(shiftDay(todayISO(),-i));
+  const kp=[], pp=[];
+  days.forEach(d=>{ const l=F.days[d]; if(l&&l.length){ const t=dayTot(l); const lb=fmtDate(d);
+    kp.push({y:Math.round(t.k),label:lb,full:lb}); pp.push({y:Math.round(t.p),label:lb,full:lb}); } });
+  if(kp.length){
+    h+=`<div class="card"><h2>Калории по дням</h2>
+      <div data-chart='${JSON.stringify(kp).replace(/'/g,"&apos;")}' data-unit=" ккал">${lineChart(kp,{unit:' ккал',ylab:'Ккал',title:'Калории'})}</div></div>`;
+    h+=`<div class="card"><h2>Белок по дням</h2>
+      <div data-chart='${JSON.stringify(pp).replace(/'/g,"&apos;")}' data-unit=" г">${lineChart(pp,{unit:' г',ylab:'Белок, г',title:'Белок'})}</div></div>`;
+  }
+  return h;
+}
+function foodSetDate(d){ if(!d) return; foodDate=d; render('food'); }
+function foodSaveGoals(){
+  const F=FD(), v=id=>num(document.getElementById(id).value);
+  const k=v('gK'),p=v('gP'),f=v('gF'),c=v('gC');
+  if(!(k>0)){ alert('Укажи калории.'); return; }
+  F.goals={k:Math.round(k),p:Math.round(p||0),f:Math.round(f||0),c:Math.round(c||0)};
+  save(); render('food');
+}
+function foodDel(id){
+  const F=FD(), d=fDate();
+  F.days[d]=(F.days[d]||[]).filter(e=>e.id!==id);
+  if(!F.days[d].length) delete F.days[d];
+  save(); render('food');
+}
+function foodEditG(id){
+  const F=FD(), e=(F.days[fDate()]||[]).find(x=>x.id===id); if(!e) return;
+  const v=prompt('Сколько грамм? ('+e.name+')', round(e.g,0));
+  if(v===null) return;
+  const g=num(v); if(!(g>0)){ alert('Нужно число больше нуля.'); return; }
+  e.g=g; save(); render('food');
+}
+
+/* ---------- добавление продукта ---------- */
+let foodUI={meal:'b',res:[],loc:[],st:'',sel:null,selSrc:null,tok:0};
+let scanStream=null, scanTimer=null;
+function foodOpenAdd(meal){ foodUI={meal,res:[],loc:[],st:'',sel:null,selSrc:null,tok:0}; render('foodadd'); }
+function foodBack(){ stopScan(); render('food'); }
+function viewFoodAdd(){
+  const mn=(MEALS.find(m=>m[0]===foodUI.meal)||[])[1]||'';
+  return `<div class="card">
+    <div class="exhead"><h2 style="margin:0">${mn} · ${dayLabel(fDate())}</h2><button class="btn ghost" onclick="foodBack()">назад</button></div>
+    <input id="fQ" class="left" type="search" placeholder="Название продукта или штрихкод" oninput="paintResults()" onkeydown="if(event.key==='Enter')foodOnline()">
+    <div class="row" style="margin-top:8px">
+      <button class="btn" onclick="foodOnline()">Искать в базе</button>
+      <button class="btn sec" onclick="foodScan()">📷 Штрихкод</button>
+    </div>
+    <div class="tiny" style="margin-top:8px">Сначала смотрю в твоих продуктах, кнопка «Искать в базе» ищет в Open Food Facts. Нашёл продукт один раз, он сохранится у тебя.</div>
+    <div id="fScan"></div>
+  </div>
+  <div id="fPick"></div>
+  <div id="fResults"></div>
+  <div class="card"><details style="margin-top:0"><summary>Нет нигде? Ввести продукт вручную</summary>
+    <div style="height:10px"></div>
+    <input id="mName" class="left" type="text" placeholder="Название">
+    <div class="tiny" style="margin:8px 0 4px">Значения как на упаковке, на 100 г</div>
+    <div class="setgrid" style="grid-template-columns:repeat(4,1fr)"><div class="hd">Ккал</div><div class="hd">Белки</div><div class="hd">Жиры</div><div class="hd">Углев.</div></div>
+    <div class="setgrid" style="grid-template-columns:repeat(4,1fr)">
+      <input type="number" inputmode="decimal" id="mK"><input type="number" inputmode="decimal" id="mP">
+      <input type="number" inputmode="decimal" id="mF"><input type="number" inputmode="decimal" id="mC">
+    </div>
+    <div class="tiny" style="margin:4px 0">Порция в граммах (необязательно, подставится по умолчанию)</div>
+    <input type="number" inputmode="decimal" id="mS" placeholder="например 150">
+    <div style="height:8px"></div>
+    <button class="btn" onclick="foodManual()">Сохранить и выбрать</button>
+  </details></div>`;
+}
+function prodLine(p){
+  return `<div class="tiny">${p.brand?esc(p.brand)+' · ':''}${Math.round(p.k)} ккал · Б ${p.p} · Ж ${p.f} · У ${p.c} на 100 г</div>`;
+}
+function paintResults(){
+  const el=document.getElementById('fResults'); if(!el) return;
+  const q=((document.getElementById('fQ')||{}).value||'').trim().toLowerCase();
+  const F=FD();
+  let loc=F.products.filter(p=>!q||(p.name+' '+(p.brand||'')).toLowerCase().includes(q));
+  loc.sort((a,b)=>(b.used||0)-(a.used||0));
+  loc=loc.slice(0,15); foodUI.loc=loc;
+  let h=`<div class="card"><h2>${q?'Мои продукты':'Недавние и мои продукты'}</h2>`;
+  if(!loc.length) h+=`<div class="tiny">${q?'Среди твоих продуктов такого нет.':'Пока пусто. Найди продукт в базе или введи вручную, он сохранится здесь.'}</div>`;
+  else h+=loc.map((p,i)=>`<div class="hist pick" onclick="foodSel('loc',${i})"><div style="min-width:0"><b>${esc(p.name)}</b>${prodLine(p)}</div></div>`).join('');
+  h+=`</div>`;
+  if(foodUI.st) h+=`<div class="banner">${esc(foodUI.st)}</div>`;
+  if(foodUI.res.length){
+    h+=`<div class="card"><h2>Open Food Facts</h2>`+
+      foodUI.res.map((p,i)=>`<div class="hist pick" onclick="foodSel('off',${i})"><div style="min-width:0"><b>${esc(p.name)}</b>${prodLine(p)}</div></div>`).join('')+
+      `<div class="tiny" style="margin-top:8px">Данные вносят сами пользователи, цифры бывают неточными. Сверяй с упаковкой.</div></div>`;
+  }
+  el.innerHTML=h;
+}
+function foodSel(src,i){
+  const p=(src==='loc'?foodUI.loc:foodUI.res)[i]; if(!p) return;
+  foodUI.sel=Object.assign({},p); foodUI.selSrc=src;
+  paintPick();
+  const el=document.getElementById('fPick'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function paintPick(){
+  const el=document.getElementById('fPick'); if(!el) return;
+  const p=foodUI.sel;
+  if(!p){ el.innerHTML=''; return; }
+  const g0=p.serv||100;
+  el.innerHTML=`<div class="card" style="border-color:var(--accent)">
+    <h2>${esc(p.name)}</h2>${prodLine(p)}
+    <div style="height:10px"></div>
+    <div class="row">
+      <div><div class="hd tiny" style="margin-bottom:3px">Граммы</div><input type="number" inputmode="decimal" id="fG" value="${g0}" oninput="foodCalcLine()"></div>
+      <div><div class="hd tiny" style="margin-bottom:3px">Приём пищи</div>
+        <select id="fM">${MEALS.map(m=>`<option value="${m[0]}"${m[0]===foodUI.meal?' selected':''}>${m[1]}</option>`).join('')}</select></div>
+    </div>
+    <div id="fCalc" class="small" style="margin:10px 0"></div>
+    ${foodUI.selSrc==='off'?`<label class="small" style="display:flex;gap:8px;align-items:center;margin-bottom:10px"><input type="checkbox" id="fSave" checked style="width:auto"> Сохранить в мои продукты</label>`:''}
+    <div class="row"><button class="btn" onclick="foodCommit()">Добавить в дневник</button><button class="btn sec" onclick="foodUI.sel=null;paintPick()">Отмена</button></div>
+  </div>`;
+  foodCalcLine();
+}
+function foodCalcLine(){
+  const p=foodUI.sel, el=document.getElementById('fCalc'); if(!p||!el) return;
+  const g=num(document.getElementById('fG').value)||0, m=g/100;
+  el.innerHTML=`<b>${Math.round(p.k*m)} ккал</b> · Б ${round(p.p*m,1)} · Ж ${round(p.f*m,1)} · У ${round(p.c*m,1)}`;
+}
+function upsertProduct(p){
+  const F=FD(), key=x=>(x.code?'c'+x.code:'n'+(x.name+'|'+(x.brand||'')).toLowerCase());
+  let ex=F.products.find(x=>key(x)===key(p));
+  if(!ex){
+    ex={id:Math.random().toString(36).slice(2,9), name:p.name, brand:p.brand||'', k:p.k, p:p.p, f:p.f, c:p.c, serv:p.serv||null, code:p.code||null, used:Date.now()};
+    F.products.push(ex);
+  } else ex.used=Date.now();
+  return ex;
+}
+function foodCommit(){
+  const p=foodUI.sel; if(!p) return;
+  const g=num(document.getElementById('fG').value);
+  if(!(g>0)){ alert('Укажи граммы.'); return; }
+  const meal=document.getElementById('fM').value;
+  const chk=document.getElementById('fSave');
+  const F=FD();
+  if(foodUI.selSrc==='loc'){ upsertProduct(p); }
+  else if(chk&&chk.checked){ upsertProduct(p); }
+  const d=fDate();
+  (F.days[d]=F.days[d]||[]).push({id:Math.random().toString(36).slice(2,9), meal, name:p.name+(p.brand?' ('+p.brand+')':''), g, k:p.k, p:p.p, f:p.f, c:p.c});
+  save(); stopScan(); render('food');
+}
+function foodManual(){
+  const v=id=>num(document.getElementById(id).value);
+  const name=document.getElementById('mName').value.trim();
+  const k=v('mK');
+  if(!name||k==null){ alert('Нужны название и калории на 100 г.'); return; }
+  const p=upsertProduct({name, brand:'', k:Math.round(k), p:round(v('mP')||0,1), f:round(v('mF')||0,1), c:round(v('mC')||0,1), serv:v('mS')||null, code:null});
+  if(!p.serv && v('mS')) p.serv=v('mS');
+  save();
+  foodUI.sel=Object.assign({},p); foodUI.selSrc='loc';
+  paintResults(); paintPick();
+  const el=document.getElementById('fPick'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+/* ---------- Open Food Facts ---------- */
+const OFF_FIELDS='code,product_name,product_name_ru,brands,nutriments,serving_quantity,countries_tags';
+async function offFetch(url){
+  const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),12000);
+  try{
+    const r=await fetch(url,{signal:ctl.signal});
+    if(!r.ok) throw new Error('http '+r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+function offMap(p){
+  const n=p.nutriments||{};
+  let k=n['energy-kcal_100g'];
+  if((k==null||k==='')&&n['energy_100g']!=null) k=n['energy_100g']/4.184;
+  const name=String(p.product_name_ru||p.product_name||'').trim();
+  k=parseFloat(k);
+  if(!name||!isFinite(k)) return null;
+  return {name, brand:String(p.brands||'').split(',')[0].trim(),
+    k:Math.round(k), p:round(parseFloat(n.proteins_100g)||0,1), f:round(parseFloat(n.fat_100g)||0,1), c:round(parseFloat(n.carbohydrates_100g)||0,1),
+    serv:num(p.serving_quantity)||null, code:p.code||null,
+    ru:(p.countries_tags||[]).includes('en:russia'), cyr:/[а-яё]/i.test(name)};
+}
+async function offSearch(q){
+  const j=await offFetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms='+encodeURIComponent(q)+'&search_simple=1&action=process&json=1&page_size=30&fields='+OFF_FIELDS);
+  const seen={}, out=[];
+  (j.products||[]).map(offMap).filter(Boolean).forEach(p=>{
+    const key=(p.name+'|'+p.brand).toLowerCase(); if(seen[key]) return; seen[key]=1; out.push(p);
+  });
+  out.sort((a,b)=>((b.ru?2:0)+(b.cyr?1:0))-((a.ru?2:0)+(a.cyr?1:0)));
+  return out.slice(0,20);
+}
+async function offCode(code){
+  const j=await offFetch('https://world.openfoodfacts.org/api/v2/product/'+code+'.json?fields='+OFF_FIELDS);
+  if(j.status!==1||!j.product) return [];
+  const m=offMap(j.product); return m?[m]:[];
+}
+async function foodOnline(){
+  const inp=document.getElementById('fQ'); if(!inp) return;
+  const q=inp.value.trim(); if(!q) return;
+  const tok=++foodUI.tok;
+  foodUI.st='Ищу…'; foodUI.res=[]; paintResults();
+  try{
+    const items=/^\d{8,14}$/.test(q)?await offCode(q):await offSearch(q);
+    if(tok!==foodUI.tok) return;
+    foodUI.res=items;
+    foodUI.st=items.length?'':'В базе ничего не нашлось. Попробуй другое слово или введи продукт вручную.';
+  }catch(e){
+    if(tok!==foodUI.tok) return;
+    foodUI.st='База Open Food Facts сейчас не отвечает (бесплатный сервис иногда перегружен). Повтори через минуту или введи продукт вручную.';
+  }
+  paintResults();
+}
+async function foodScan(){
+  if(!('BarcodeDetector' in window)){
+    alert('Этот браузер не умеет сканировать штрихкоды. Впиши цифры штрихкода в поле поиска и нажми «Искать в базе».'); return;
+  }
+  const box=document.getElementById('fScan'); if(!box) return;
+  try{
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    box.innerHTML='<video id="fVid" playsinline muted style="width:100%;border-radius:10px;margin-top:8px;background:#000"></video><button class="btn sec" style="margin-top:8px" onclick="stopScan()">Закрыть камеру</button>';
+    const v=document.getElementById('fVid'); v.srcObject=scanStream; await v.play();
+    const det=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
+    scanTimer=setInterval(async()=>{
+      try{
+        const r=await det.detect(v);
+        if(r.length){ const code=r[0].rawValue; stopScan(); document.getElementById('fQ').value=code; foodOnline(); }
+      }catch(e){}
+    },300);
+  }catch(e){ stopScan(); alert('Нет доступа к камере. Разреши камеру для сайта или впиши штрихкод руками.'); }
+}
+function stopScan(){
+  clearInterval(scanTimer); scanTimer=null;
+  if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
+  const b=document.getElementById('fScan'); if(b) b.innerHTML='';
+}
+
+/* ============================================================
    РОУТЕР
    ============================================================ */
 let tab='home', justFinished=null;
 function render(t){
   if(t) tab=t;
   const v=document.getElementById('view');
-  const map={home:viewHome, workout:viewWorkout, progress:viewProgress, body:viewBody, data:viewData, edit:viewEdit};
+  const map={home:viewHome, workout:viewWorkout, progress:viewProgress, body:viewBody, food:viewFood, foodadd:viewFoodAdd, data:viewData, edit:viewEdit};
   const banner = newVersion
     ? `<div class="upd"><div><b>Есть версия ${newVersion}</b><div class="tiny" style="margin-top:1px">У тебя ${BUILD.v}. Записи не потеряются.</div></div>
        <button class="updbtn" onclick="forceUpdate()">Обновить</button></div>` : '';
@@ -1037,18 +1355,20 @@ function render(t){
     if(w){ w.dataset.pts=host.dataset.chart; w.dataset.unit=host.dataset.unit||''; }
   });
   wireCharts();
-  const titles={home:'Дневник тренировок',workout:'Тренировка',progress:'Прогресс',body:'Тело и замеры',data:'Данные',edit:'Правка тренировки'};
+  if(tab==='foodadd') paintResults();
+  const titles={home:'Дневник тренировок',workout:'Тренировка',progress:'Прогресс',body:'Тело и замеры',food:'Дневник питания',foodadd:'Добавить еду',data:'Данные',edit:'Правка тренировки'};
   document.getElementById('hTitle').textContent=titles[tab]||'Дневник';
   const d=new Date();
   document.getElementById('hSub').textContent =
     'Андрей · неделя '+cycleWeek()+' из 8'+(isDeload()?' · разгрузка':'')+' · '+d.getDate()+' '+MON[d.getMonth()];
-  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on', b.dataset.tab===(tab==='foodadd'?'food':tab)));
   if(tab!=='workout') window.scrollTo(0,0);
 }
 document.querySelectorAll('nav button').forEach(b=>{
   b.addEventListener('click',()=>{
     if(tab==='workout' && b.dataset.tab!=='workout'){ /* черновик уже сохранён */ }
     if(tab==='edit') editBuf=null;
+    if(tab==='foodadd') stopScan();
     render(b.dataset.tab);
   });
 });
