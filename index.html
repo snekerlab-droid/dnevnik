@@ -208,8 +208,9 @@ input.left{text-align:left;padding:10px 12px}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'2.5', date:'2026-10-07'};
+const BUILD = {v:'2.6', date:'2026-10-07'};
 const CHANGELOG = [
+  {v:'2.6', d:'2026-10-07', t:'Сканер штрихкодов теперь работает и на iPhone (Safari): распознавание подгружается отдельной библиотекой при первом нажатии на кнопку камеры.'},
   {v:'2.5', d:'2026-10-07', t:'Цели по калориям, белкам, жирам и углеводам в «Еде» считаются автоматически: формула Миффлина-Сан Жеора, рост 178 см, вес из последнего замера, возраст по дате рождения. Активность и дефицит калорий выбираются, цели можно задать и вручную.'},
   {v:'2.4', d:'2026-10-07', t:'Новая вкладка «Еда»: дневник питания. Приёмы пищи (завтрак, обед, ужин, перекус), итоги калорий, белков, жиров и углеводов за день с полосками к цели, графики за 14 дней. Продукты ищутся в базе Open Food Facts по названию или штрихкоду (камерой), найденное сохраняется в «мои продукты». Можно ввести продукт вручную. Цели на день настраиваются.'},
   {v:'2.3', d:'2026-09-26', t:'История показывает все тренировки, а не только последние 12. Тренировки по старой программе подписаны просто «День A · Верх» и «День B · Низ + кор», без пометки «архив».'},
@@ -1353,27 +1354,51 @@ async function foodOnline(){
   }
   paintResults();
 }
+let zxReader=null;
+function loadZX(){
+  return new Promise((res,rej)=>{
+    if(window.ZXing) return res();
+    const sc=document.createElement('script');
+    sc.src='https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+    sc.onload=()=>res(); sc.onerror=()=>rej(new Error('zxing'));
+    document.head.appendChild(sc);
+  });
+}
+function onBarcode(code){
+  stopScan();
+  const q=document.getElementById('fQ'); if(q) q.value=code;
+  foodOnline();
+}
 async function foodScan(){
-  if(!('BarcodeDetector' in window)){
-    alert('Этот браузер не умеет сканировать штрихкоды. Впиши цифры штрихкода в поле поиска и нажми «Искать в базе».'); return;
-  }
   const box=document.getElementById('fScan'); if(!box) return;
+  stopScan();
   try{
-    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-    box.innerHTML='<video id="fVid" playsinline muted style="width:100%;border-radius:10px;margin-top:8px;background:#000"></video><button class="btn sec" style="margin-top:8px" onclick="stopScan()">Закрыть камеру</button>';
-    const v=document.getElementById('fVid'); v.srcObject=scanStream; await v.play();
-    const det=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
-    scanTimer=setInterval(async()=>{
-      try{
-        const r=await det.detect(v);
-        if(r.length){ const code=r[0].rawValue; stopScan(); document.getElementById('fQ').value=code; foodOnline(); }
-      }catch(e){}
-    },300);
-  }catch(e){ stopScan(); alert('Нет доступа к камере. Разреши камеру для сайта или впиши штрихкод руками.'); }
+    box.innerHTML='<video id="fVid" playsinline muted autoplay style="width:100%;border-radius:10px;margin-top:8px;background:#000;min-height:160px"></video><div class="tiny" style="margin-top:6px">Наведи камеру на штрихкод на упаковке</div><button class="btn sec" style="margin-top:8px" onclick="stopScan()">Закрыть камеру</button>';
+    const v=document.getElementById('fVid');
+    if('BarcodeDetector' in window){
+      scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+      v.srcObject=scanStream; await v.play();
+      const det=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
+      scanTimer=setInterval(async()=>{
+        try{ const r=await det.detect(v); if(r.length) onBarcode(r[0].rawValue); }catch(e){}
+      },300);
+    } else {
+      // Safari на iPhone не умеет сканировать сам: подгружаем библиотеку-распознаватель
+      await loadZX();
+      const hints=new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.UPC_E]);
+      zxReader=new ZXing.BrowserMultiFormatReader(hints);
+      await zxReader.decodeFromConstraints({video:{facingMode:'environment'}},'fVid',(res)=>{ if(res) onBarcode(res.getText()); });
+    }
+  }catch(e){
+    stopScan();
+    alert('Не получилось включить камеру. Проверь, что сайту разрешена камера (Настройки, Safari, Камера), или впиши цифры штрихкода в поле поиска.');
+  }
 }
 function stopScan(){
   clearInterval(scanTimer); scanTimer=null;
   if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
+  if(zxReader){ try{ zxReader.reset(); }catch(e){} zxReader=null; }
   const b=document.getElementById('fScan'); if(b) b.innerHTML='';
 }
 
