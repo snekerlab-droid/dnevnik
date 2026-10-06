@@ -208,8 +208,9 @@ input.left{text-align:left;padding:10px 12px}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'2.4', date:'2026-10-07'};
+const BUILD = {v:'2.5', date:'2026-10-07'};
 const CHANGELOG = [
+  {v:'2.5', d:'2026-10-07', t:'Цели по калориям, белкам, жирам и углеводам в «Еде» считаются автоматически: формула Миффлина-Сан Жеора, рост 178 см, вес из последнего замера, возраст по дате рождения. Активность и дефицит калорий выбираются, цели можно задать и вручную.'},
   {v:'2.4', d:'2026-10-07', t:'Новая вкладка «Еда»: дневник питания. Приёмы пищи (завтрак, обед, ужин, перекус), итоги калорий, белков, жиров и углеводов за день с полосками к цели, графики за 14 дней. Продукты ищутся в базе Open Food Facts по названию или штрихкоду (камерой), найденное сохраняется в «мои продукты». Можно ввести продукт вручную. Цели на день настраиваются.'},
   {v:'2.3', d:'2026-09-26', t:'История показывает все тренировки, а не только последние 12. Тренировки по старой программе подписаны просто «День A · Верх» и «День B · Низ + кор», без пометки «архив».'},
   {v:'2.2', d:'2026-09-26', t:'Прошлые тренировки можно править: в истории кнопка «изменить» открывает дату, длительность, вес, повторы и RPE каждого подхода, можно добавить или убрать подход и пометить тренировку как разгрузочную. Время тренировки: засекается при старте, во время тренировки видно, сколько прошло, после завершения показывается итог, а в истории у каждой тренировки видна длительность. У старых тренировок время можно вписать вручную.'},
@@ -1034,13 +1035,57 @@ function wipe(){
    ЭКРАН: ЕДА  (дневник питания, база Open Food Facts + свои продукты)
    ============================================================ */
 const MEALS=[['b','Завтрак'],['l','Обед'],['d','Ужин'],['s','Перекус']];
-const DEF_GOALS={k:2200,p:160,f:70,c:230};
+const BIRTH='1988-03-03', HEIGHT=178;
+const ACTS=[[1.2,'Сидячая, почти без тренировок'],[1.375,'Лёгкая, 1–3 тренировки в неделю'],[1.55,'Умеренная, 3–5 тренировок'],[1.725,'Высокая, 6–7 тренировок']];
+const DEFICITS=[0,10,15,20,25];
+function ageNow(){ const b=new Date(BIRTH+'T12:00:00'), n=new Date(); let a=n.getFullYear()-b.getFullYear(); if(n.getMonth()<b.getMonth()||(n.getMonth()===b.getMonth()&&n.getDate()<b.getDate())) a--; return a; }
+/* Цели считаются по формуле Миффлина-Сан Жеора: вес берётся из последнего замера, рост фиксированный */
+function calcGoals(){
+  const gs=FD().goals;
+  const bw=S.body.filter(x=>x.weight!=null).sort((a,b)=>a.date.localeCompare(b.date));
+  const w=bw.length?bw[bw.length-1].weight:87;
+  const age=ageNow();
+  const bmr=10*w+6.25*HEIGHT-5*age+5;
+  const act=gs.act||1.375, def=gs.def==null?20:gs.def;
+  const tdee=bmr*act, k=Math.round(tdee*(1-def/100));
+  const p=Math.round(w*1.8), f=Math.round(w*0.8);
+  const c=Math.max(0,Math.round((k-p*4-f*9)/4));
+  return {k,p,f,c,w,age,bmr:Math.round(bmr),tdee:Math.round(tdee),act,def,fromBody:bw.length>0};
+}
+function curGoals(){ const g=FD().goals; return g.manual===true?{k:g.k,p:g.p,f:g.f,c:g.c}:calcGoals(); }
+function goalsPanel(F){
+  const a=calcGoals(), man=F.goals.manual===true, g=curGoals();
+  return `<div class="small" style="margin-top:10px">${man?'Цели заданы вручную.':'Считаются автоматически по формуле Миффлина-Сан Жеора.'}</div>
+    <div class="tiny" style="margin:6px 0">Мужчина, ${a.age} лет, рост ${HEIGHT} см, вес ${a.w} кг${a.fromBody?' (последний замер)':' (замеров веса пока нет)'}. Основной обмен ${a.bmr} ккал, с активностью ${a.tdee} ккал, дефицит ${a.def}%. Белок 1,8 г на кг веса, жиры 0,8 г на кг, остальное углеводы.</div>
+    <div class="tiny" style="margin:8px 0 3px">Активность</div>
+    <select id="gAct" onchange="foodSetCalc()">${ACTS.map(x=>`<option value="${x[0]}"${x[0]===a.act?' selected':''}>${x[1]}</option>`).join('')}</select>
+    <div class="tiny" style="margin:8px 0 3px">Дефицит калорий</div>
+    <select id="gDef" onchange="foodSetCalc()">${DEFICITS.map(x=>`<option value="${x}"${x===a.def?' selected':''}>${x===0?'Без дефицита (поддержание)':x+'%'}</option>`).join('')}</select>
+    <details id="goalsMan"><summary>Задать вручную</summary>
+      <div class="setgrid" style="grid-template-columns:repeat(4,1fr);margin-top:10px"><div class="hd">Ккал</div><div class="hd">Белки</div><div class="hd">Жиры</div><div class="hd">Углев.</div></div>
+      <div class="setgrid" style="grid-template-columns:repeat(4,1fr)">
+        <input type="number" inputmode="numeric" id="gK" value="${g.k}"><input type="number" inputmode="numeric" id="gP" value="${g.p}">
+        <input type="number" inputmode="numeric" id="gF" value="${g.f}"><input type="number" inputmode="numeric" id="gC" value="${g.c}">
+      </div>
+      <button class="btn sec" style="margin-top:6px" onclick="foodSaveGoals()">Сохранить свои цели</button>
+    </details>
+    ${man?`<button class="btn" style="margin-top:10px" onclick="foodAutoGoals()">Вернуть автоматический расчёт</button>`:''}`;
+}
+function foodSetCalc(){
+  const F=FD();
+  F.goals.act=parseFloat(document.getElementById('gAct').value)||1.375;
+  F.goals.def=parseFloat(document.getElementById('gDef').value)||0;
+  F.goals.manual=false;
+  save(); render('food');
+  const d=document.getElementById('goalsDet'); if(d) d.open=true;
+}
+function foodAutoGoals(){ FD().goals.manual=false; save(); render('food'); const d=document.getElementById('goalsDet'); if(d) d.open=true; }
 function FD(){
   if(!S.food||typeof S.food!=='object') S.food={};
   const f=S.food;
   if(!Array.isArray(f.products)) f.products=[];
   if(!f.days||typeof f.days!=='object') f.days={};
-  if(!f.goals) f.goals=Object.assign({},DEF_GOALS);
+  if(!f.goals) f.goals={act:1.375,def:20};
   return f;
 }
 let foodDate=null;
@@ -1066,7 +1111,7 @@ function dayLabel(iso){
 }
 function viewFood(){
   const F=FD(), date=fDate(), list=F.days[date]||[];
-  const tot=dayTot(list), g=F.goals;
+  const tot=dayTot(list), g=curGoals();
   const left=g.k-tot.k;
   let h=`<div class="card">
     <div class="row" style="align-items:center">
@@ -1083,13 +1128,8 @@ function viewFood(){
     <div class="mrow"><span>Белки</span><span><b>${Math.round(tot.p)}</b> / ${g.p} г</span></div>${bar(tot.p,g.p,false)}
     <div class="mrow"><span>Жиры</span><span><b>${Math.round(tot.f)}</b> / ${g.f} г</span></div>${bar(tot.f,g.f,true)}
     <div class="mrow"><span>Углеводы</span><span><b>${Math.round(tot.c)}</b> / ${g.c} г</span></div>${bar(tot.c,g.c,true)}
-    <details><summary>Цели на день</summary>
-      <div class="setgrid" style="grid-template-columns:repeat(4,1fr);margin-top:10px"><div class="hd">Ккал</div><div class="hd">Белки</div><div class="hd">Жиры</div><div class="hd">Углев.</div></div>
-      <div class="setgrid" style="grid-template-columns:repeat(4,1fr)">
-        <input type="number" inputmode="numeric" id="gK" value="${g.k}"><input type="number" inputmode="numeric" id="gP" value="${g.p}">
-        <input type="number" inputmode="numeric" id="gF" value="${g.f}"><input type="number" inputmode="numeric" id="gC" value="${g.c}">
-      </div>
-      <button class="btn sec" style="margin-top:6px" onclick="foodSaveGoals()">Сохранить цели</button>
+    <details id="goalsDet"><summary>Цели на день (${F.goals.manual===true?'вручную':'авто'})</summary>
+      ${goalsPanel(F)}
     </details>
   </div>`;
   MEALS.forEach(([mk,mn])=>{
@@ -1123,7 +1163,7 @@ function foodSaveGoals(){
   const F=FD(), v=id=>num(document.getElementById(id).value);
   const k=v('gK'),p=v('gP'),f=v('gF'),c=v('gC');
   if(!(k>0)){ alert('Укажи калории.'); return; }
-  F.goals={k:Math.round(k),p:Math.round(p||0),f:Math.round(f||0),c:Math.round(c||0)};
+  F.goals=Object.assign(F.goals,{manual:true,k:Math.round(k),p:Math.round(p||0),f:Math.round(f||0),c:Math.round(c||0)});
   save(); render('food');
 }
 function foodDel(id){
