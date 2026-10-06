@@ -216,8 +216,9 @@ body.dragging{-webkit-user-select:none;user-select:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'3.6', date:'2026-10-07'};
+const BUILD = {v:'3.7', date:'2026-10-07'};
 const CHANGELOG = [
+  {v:'3.7', d:'2026-10-07', t:'Выбранный продукт сразу добавляется в приём пищи без подтверждения (порция по умолчанию, у продуктов без порции 100 г). Граммы меняются потом прямо в дневнике.'},
   {v:'3.6', d:'2026-10-07', t:'Перенос продуктов переделан: слева у каждой строки значок ⠿, за него тянешь продукт в другой приём пищи или на другое место внутри приёма, порядок сохраняется. Зажимать строку на секунду больше не нужно, поэтому на iPhone это работает надёжно. Список «Мои продукты» при добавлении еды теперь всегда по алфавиту и показывает все продукты.'},
   {v:'3.5', d:'2026-10-07', t:'Перенос продукта между приёмами пищи починен и сделан надёжнее: под названием продукта появилась ссылка «перенести» (выбор приёма из списка), а перетаскивание теперь срабатывает, даже если телефон прервал касание при отпускании пальца.'},
   {v:'3.4', d:'2026-10-07', t:'Убраны сырые смеси для котлет из списка «мои продукты».'},
@@ -1337,7 +1338,7 @@ function viewFoodAdd(){
       <button class="btn" onclick="foodOnline()">Искать в базе</button>
       <button class="btn sec" onclick="foodScan()">📷 Штрихкод</button>
     </div>
-    <div class="tiny" style="margin-top:8px">Сначала смотрю в твоих продуктах, кнопка «Искать в базе» ищет в Open Food Facts. Нашёл продукт один раз, он сохранится у тебя.</div>
+    <div class="tiny" style="margin-top:8px">Нажми на продукт, и он сразу добавится в приём пищи с порцией по умолчанию, граммы поменяешь потом в дневнике. Кнопка «Искать в базе» ищет в Open Food Facts, найденное сохраняется в твоих продуктах.</div>
     <div id="fScan"></div>
   </div>
   <div id="fPick"></div>
@@ -1379,11 +1380,19 @@ function paintResults(){
   }
   el.innerHTML=h;
 }
+/* Выбор продукта сразу добавляет его в приём пищи с порцией по умолчанию, граммы правятся потом в дневнике */
+function addEntryFrom(p){
+  const F=FD(), meal=foodUI.meal;
+  const sp=upsertProduct(p);
+  const d=fDate();
+  (F.days[d]=F.days[d]||[]).push({id:Math.random().toString(36).slice(2,9), meal, name:p.name+(p.brand?' ('+p.brand+')':''), g:p.serv||sp.serv||100, k:p.k, p:p.p, f:p.f, c:p.c});
+  save(); stopScan(); render('food');
+  const c=document.querySelector('.mealcard[data-meal="'+meal+'"]');
+  if(c) c.scrollIntoView({block:'center'});
+}
 function foodSel(src,i){
   const p=(src==='loc'?foodUI.loc:foodUI.res)[i]; if(!p) return;
-  foodUI.sel=Object.assign({},p); foodUI.selSrc=src;
-  paintPick();
-  const el=document.getElementById('fPick'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+  addEntryFrom(p);
 }
 function paintPick(){
   const el=document.getElementById('fPick'); if(!el) return;
@@ -1439,9 +1448,7 @@ function foodManual(){
   const p=upsertProduct({name, brand:'', k:Math.round(k), p:round(v('mP')||0,1), f:round(v('mF')||0,1), c:round(v('mC')||0,1), serv:v('mS')||null, code:null});
   if(!p.serv && v('mS')) p.serv=v('mS');
   save();
-  foodUI.sel=Object.assign({},p); foodUI.selSrc='loc';
-  paintResults(); paintPick();
-  const el=document.getElementById('fPick'); if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+  addEntryFrom(p);
 }
 
 /* ---------- Open Food Facts ---------- */
