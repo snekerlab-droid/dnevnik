@@ -208,8 +208,9 @@ input.left{text-align:left;padding:10px 12px}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'2.6', date:'2026-10-07'};
+const BUILD = {v:'2.7', date:'2026-10-07'};
 const CHANGELOG = [
+  {v:'2.7', d:'2026-10-07', t:'Поиск в Open Food Facts стал устойчивее: бесплатный сервис иногда отвечает ошибкой, теперь приложение само повторяет запрос до четырёх раз через разные серверы, прежде чем сдаться. Русский сервер опрашивается первым, поэтому русские продукты выше в выдаче.'},
   {v:'2.6', d:'2026-10-07', t:'Сканер штрихкодов теперь работает и на iPhone (Safari): распознавание подгружается отдельной библиотекой при первом нажатии на кнопку камеры.'},
   {v:'2.5', d:'2026-10-07', t:'Цели по калориям, белкам, жирам и углеводам в «Еде» считаются автоматически: формула Миффлина-Сан Жеора, рост 178 см, вес из последнего замера, возраст по дате рождения. Активность и дефицит калорий выбираются, цели можно задать и вручную.'},
   {v:'2.4', d:'2026-10-07', t:'Новая вкладка «Еда»: дневник питания. Приёмы пищи (завтрак, обед, ужин, перекус), итоги калорий, белков, жиров и углеводов за день с полосками к цели, графики за 14 дней. Продукты ищутся в базе Open Food Facts по названию или штрихкоду (камерой), найденное сохраняется в «мои продукты». Можно ввести продукт вручную. Цели на день настраиваются.'},
@@ -1304,13 +1305,20 @@ function foodManual(){
 
 /* ---------- Open Food Facts ---------- */
 const OFF_FIELDS='code,product_name,product_name_ru,brands,nutriments,serving_quantity,countries_tags';
-async function offFetch(url){
-  const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),12000);
-  try{
-    const r=await fetch(url,{signal:ctl.signal});
-    if(!r.ok) throw new Error('http '+r.status);
-    return await r.json();
-  } finally { clearTimeout(t); }
+const OFF_HOSTS=['ru','world','ru','world'];
+async function offFetch(urls){
+  let last;
+  for(let i=0;i<urls.length;i++){
+    const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),9000);
+    try{
+      const r=await fetch(urls[i],{signal:ctl.signal});
+      if(r.status===404) return await r.json();
+      if(!r.ok) throw new Error('http '+r.status);
+      return await r.json();
+    }catch(e){ last=e; if(i<urls.length-1) await new Promise(r=>setTimeout(r,600)); }
+    finally{ clearTimeout(t); }
+  }
+  throw last;
 }
 function offMap(p){
   const n=p.nutriments||{};
@@ -1325,7 +1333,7 @@ function offMap(p){
     ru:(p.countries_tags||[]).includes('en:russia'), cyr:/[а-яё]/i.test(name)};
 }
 async function offSearch(q){
-  const j=await offFetch('https://world.openfoodfacts.org/cgi/search.pl?search_terms='+encodeURIComponent(q)+'&search_simple=1&action=process&json=1&page_size=30&fields='+OFF_FIELDS);
+  const j=await offFetch(OFF_HOSTS.map(h=>'https://'+h+'.openfoodfacts.org/cgi/search.pl?search_terms='+encodeURIComponent(q)+'&search_simple=1&action=process&json=1&page_size=30&fields='+OFF_FIELDS));
   const seen={}, out=[];
   (j.products||[]).map(offMap).filter(Boolean).forEach(p=>{
     const key=(p.name+'|'+p.brand).toLowerCase(); if(seen[key]) return; seen[key]=1; out.push(p);
@@ -1334,7 +1342,7 @@ async function offSearch(q){
   return out.slice(0,20);
 }
 async function offCode(code){
-  const j=await offFetch('https://world.openfoodfacts.org/api/v2/product/'+code+'.json?fields='+OFF_FIELDS);
+  const j=await offFetch(OFF_HOSTS.map(h=>'https://'+h+'.openfoodfacts.org/api/v2/product/'+code+'.json?fields='+OFF_FIELDS));
   if(j.status!==1||!j.product) return [];
   const m=offMap(j.product); return m?[m]:[];
 }
