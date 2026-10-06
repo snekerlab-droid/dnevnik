@@ -183,6 +183,8 @@ input.left{text-align:left;padding:10px 12px}
 body.dragging{-webkit-user-select:none;user-select:none}
 .dh{flex:0 0 30px;align-self:stretch;display:flex;align-items:center;justify-content:center;margin-left:-8px;color:var(--muted);font-size:22px;touch-action:none;cursor:grab;-webkit-user-select:none;user-select:none}
 .hist.dropbefore{box-shadow:0 -3px 0 var(--accent)}
+.pth{flex:0 0 54px;width:54px;height:54px;border-radius:11px;object-fit:cover;background:var(--plane);border:1px solid var(--border);margin-right:12px}
+.pth.ph{display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:650;font-size:19px}
 </style>
 </head>
 <body>
@@ -216,8 +218,9 @@ body.dragging{-webkit-user-select:none;user-select:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'3.8', date:'2026-10-07'};
+const BUILD = {v:'3.9', date:'2026-10-07'};
 const CHANGELOG = [
+  {v:'3.9', d:'2026-10-07', t:'В списке «Мои продукты» слева у каждого продукта теперь аккуратное квадратное фото (с твоих карточек, подрезано и отцентровано). Продукты без фото показывают буквенную заглушку. Продукты из Open Food Facts сохраняются вместе с их фото, если оно там есть.'},
   {v:'3.8', d:'2026-10-07', t:'В дневнике питания страница больше не прыгает вверх при переносе продукта, смене граммов и удалении: остаётся там, где ты был.'},
   {v:'3.7', d:'2026-10-07', t:'Выбранный продукт сразу добавляется в приём пищи без подтверждения (порция по умолчанию, у продуктов без порции 100 г). Граммы меняются потом прямо в дневнике.'},
   {v:'3.6', d:'2026-10-07', t:'Перенос продуктов переделан: слева у каждой строки значок ⠿, за него тянешь продукт в другой приём пищи или на другое место внутри приёма, порядок сохраняется. Зажимать строку на секунду больше не нужно, поэтому на iPhone это работает надёжно. Список «Мои продукты» при добавлении еды теперь всегда по алфавиту и показывает все продукты.'},
@@ -1309,6 +1312,25 @@ const PRESET_PRODUCTS=[
 ];
 // Продукты, которые убрали из списка: удаляются и у тех, у кого уже были добавлены
 const REMOVED_PRODUCTS=['Сырая смесь для котлет из филе индейки (лёгкие), без масла','Сырая смесь для котлет из индейки (классические), без масла'];
+const PRESET_IMG={
+  'Бананы':'img/banany.jpg',
+  'Батон молочный':'img/baton.jpg',
+  'Гречневая крупа в варочных пакетах (сухая)':'img/grechka.jpg',
+  'Рис длиннозёрный в варочных пакетах (сухой)':'img/ris.jpg',
+  'Кетчуп томатный':'img/ketchup.jpg',
+  'Молоко безлактозное 1,8%':'img/moloko.jpg',
+  'Подсолнечное масло с оливковым':'img/maslo.jpg',
+  'Сывороточный протеин, банан':'img/protein.jpg',
+  'Творожок чизкейк 3,5%':'img/savushkin.jpg',
+  'Творог обезжиренный':'img/tvorog.jpg',
+  'Фарш из индейки классический (с кожей)':'img/farsh1.jpg',
+  'Фарш из филе грудки индейки':'img/farsh2.jpg',
+  'Яйцо куриное С1':'img/yaytsa.jpg',
+  'Котлеты из филе индейки (лёгкие), сковорода':'img/farsh2.jpg',
+  'Котлеты из филе индейки (лёгкие), аэрогриль':'img/farsh2.jpg',
+  'Котлеты из индейки (классические), сковорода':'img/farsh1.jpg',
+  'Котлеты из индейки (классические), аэрогриль':'img/farsh1.jpg'
+};
 function seedProducts(){
   const F=FD(); let ch=false;
   const before=F.products.length;
@@ -1317,8 +1339,12 @@ function seedProducts(){
   PRESET_PRODUCTS.forEach((x,i)=>{
     const key=(x[0]+'|'+x[1]).toLowerCase();
     const ex=F.products.find(p=>p.code==null&&(p.name+'|'+(p.brand||'')).toLowerCase()===key);
-    if(ex){ if(x[6]!=null&&ex.serv!==x[6]){ ex.serv=x[6]; ch=true; } return; }
-    F.products.push({id:Math.random().toString(36).slice(2,9), name:x[0], brand:x[1], k:x[2], p:x[3], f:x[4], c:x[5], serv:x[6], code:null, used:Date.now()-i});
+    if(ex){
+      if(x[6]!=null&&ex.serv!==x[6]){ ex.serv=x[6]; ch=true; }
+      if(PRESET_IMG[x[0]]&&ex.img!==PRESET_IMG[x[0]]){ ex.img=PRESET_IMG[x[0]]; ch=true; }
+      return;
+    }
+    F.products.push({id:Math.random().toString(36).slice(2,9), name:x[0], brand:x[1], k:x[2], p:x[3], f:x[4], c:x[5], serv:x[6], code:null, img:PRESET_IMG[x[0]]||null, used:Date.now()-i});
     ch=true;
   });
   if(ch) save();
@@ -1359,6 +1385,11 @@ function viewFoodAdd(){
     <button class="btn" onclick="foodManual()">Сохранить и выбрать</button>
   </details></div>`;
 }
+function thumb(p){
+  return p.img
+    ? '<img class="pth" src="'+esc(p.img)+'" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">'
+    : '<div class="pth ph">'+esc((p.name||'?').charAt(0).toUpperCase())+'</div>';
+}
 function prodLine(p){
   return `<div class="tiny">${p.brand?esc(p.brand)+' · ':''}${Math.round(p.k)} ккал · Б ${p.p} · Ж ${p.f} · У ${p.c} на 100 г</div>`;
 }
@@ -1371,7 +1402,7 @@ function paintResults(){
   foodUI.loc=loc;
   let h=`<div class="card"><h2>Мои продукты</h2>`;
   if(!loc.length) h+=`<div class="tiny">${q?'Среди твоих продуктов такого нет.':'Пока пусто. Найди продукт в базе или введи вручную, он сохранится здесь.'}</div>`;
-  else h+=loc.map((p,i)=>`<div class="hist pick" onclick="foodSel('loc',${i})"><div style="min-width:0"><b>${esc(p.name)}</b>${prodLine(p)}</div></div>`).join('');
+  else h+=loc.map((p,i)=>`<div class="hist pick" onclick="foodSel('loc',${i})">${thumb(p)}<div style="min-width:0;flex:1"><b>${esc(p.name)}</b>${prodLine(p)}</div></div>`).join('');
   h+=`</div>`;
   if(foodUI.st) h+=`<div class="banner">${esc(foodUI.st)}</div>`;
   if(foodUI.res.length){
@@ -1423,7 +1454,7 @@ function upsertProduct(p){
   const F=FD(), key=x=>(x.code?'c'+x.code:'n'+(x.name+'|'+(x.brand||'')).toLowerCase());
   let ex=F.products.find(x=>key(x)===key(p));
   if(!ex){
-    ex={id:Math.random().toString(36).slice(2,9), name:p.name, brand:p.brand||'', k:p.k, p:p.p, f:p.f, c:p.c, serv:p.serv||null, code:p.code||null, used:Date.now()};
+    ex={id:Math.random().toString(36).slice(2,9), name:p.name, brand:p.brand||'', k:p.k, p:p.p, f:p.f, c:p.c, serv:p.serv||null, code:p.code||null, img:p.img||null, used:Date.now()};
     F.products.push(ex);
   } else ex.used=Date.now();
   return ex;
@@ -1453,7 +1484,7 @@ function foodManual(){
 }
 
 /* ---------- Open Food Facts ---------- */
-const OFF_FIELDS='code,product_name,product_name_ru,brands,nutriments,serving_quantity,countries_tags';
+const OFF_FIELDS='code,product_name,product_name_ru,brands,nutriments,serving_quantity,countries_tags,image_front_small_url';
 const OFF_HOSTS=['ru','world','ru','world'];
 async function offFetch(urls){
   let last;
@@ -1478,7 +1509,7 @@ function offMap(p){
   if(!name||!isFinite(k)) return null;
   return {name, brand:String(p.brands||'').split(',')[0].trim(),
     k:Math.round(k), p:round(parseFloat(n.proteins_100g)||0,1), f:round(parseFloat(n.fat_100g)||0,1), c:round(parseFloat(n.carbohydrates_100g)||0,1),
-    serv:num(p.serving_quantity)||null, code:p.code||null,
+    serv:num(p.serving_quantity)||null, code:p.code||null, img:p.image_front_small_url||null,
     ru:(p.countries_tags||[]).includes('en:russia'), cyr:/[а-яё]/i.test(name)};
 }
 async function offSearch(q){
