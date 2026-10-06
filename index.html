@@ -181,6 +181,8 @@ input.left{text-align:left;padding:10px 12px}
 .dragghost .gin{display:none}
 .mealcard.droptarget{outline:2px dashed var(--accent);outline-offset:-2px}
 body.dragging{-webkit-user-select:none;user-select:none}
+.dh{flex:0 0 30px;align-self:stretch;display:flex;align-items:center;justify-content:center;margin-left:-8px;color:var(--muted);font-size:22px;touch-action:none;cursor:grab;-webkit-user-select:none;user-select:none}
+.hist.dropbefore{box-shadow:0 -3px 0 var(--accent)}
 </style>
 </head>
 <body>
@@ -214,8 +216,9 @@ body.dragging{-webkit-user-select:none;user-select:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'3.5', date:'2026-10-07'};
+const BUILD = {v:'3.6', date:'2026-10-07'};
 const CHANGELOG = [
+  {v:'3.6', d:'2026-10-07', t:'Перенос продуктов переделан: слева у каждой строки значок ⠿, за него тянешь продукт в другой приём пищи или на другое место внутри приёма, порядок сохраняется. Зажимать строку на секунду больше не нужно, поэтому на iPhone это работает надёжно. Список «Мои продукты» при добавлении еды теперь всегда по алфавиту и показывает все продукты.'},
   {v:'3.5', d:'2026-10-07', t:'Перенос продукта между приёмами пищи починен и сделан надёжнее: под названием продукта появилась ссылка «перенести» (выбор приёма из списка), а перетаскивание теперь срабатывает, даже если телефон прервал касание при отпускании пальца.'},
   {v:'3.4', d:'2026-10-07', t:'Убраны сырые смеси для котлет из списка «мои продукты».'},
   {v:'3.3', d:'2026-10-07', t:'Добавлены сырые смеси для котлет (на 100 г сырого, без масла): лёгкая из филе индейки 110 ккал, классическая 200 ккал. Готовые котлеты уже были: сковорода считается с маслом, аэрогриль без масла.'},
@@ -1152,7 +1155,7 @@ function viewFood(){
     const ml=list.filter(e=>e.meal===mk), mt=dayTot(ml);
     h+=`<div class="card mealcard" data-meal="${mk}">
       <div class="mealhead"><h2 style="margin:0">${mn}</h2><span class="tiny">${ml.length?Math.round(mt.k)+' ккал':''}</span></div>
-      ${ml.map(e=>{ const x=eCalc(e); return `<div class="hist" data-eid="${e.id}"><div style="flex:1;min-width:0" onclick="var i=this.parentNode.querySelector('.gin');i.focus();i.select()">
+      ${ml.map(e=>{ const x=eCalc(e); return `<div class="hist" data-eid="${e.id}"><div class="dh" onpointerdown="dgStart(event,'${e.id}')" onpointermove="dgMove(event)" onpointerup="dgEnd(event)" onpointercancel="dgEnd(event)">⠿</div><div style="flex:1;min-width:0" onclick="var i=this.parentNode.querySelector('.gin');i.focus();i.select()">
         <b>${esc(e.name)}</b>
         <div class="tiny">${Math.round(x.k)} ккал · Б ${Math.round(x.p)} · Ж ${Math.round(x.f)} · У ${Math.round(x.c)}</div>
         <div class="tiny" style="position:relative;display:inline-block;color:var(--accent);margin-top:2px" onclick="event.stopPropagation()">перенести ▾<select onchange="foodMove('${e.id}',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0"><option value="">Перенести в…</option>${MEALS.filter(m=>m[0]!==mk).map(m=>`<option value="${m[0]}">${m[1]}</option>`).join('')}</select></div></div>
@@ -1162,7 +1165,7 @@ function viewFood(){
       <button class="btn sec" onclick="foodOpenAdd('${mk}')">+ Добавить</button>
     </div>`;
   });
-  if(list.length) h+=`<div class="tiny" style="text-align:center;margin:-4px 0 12px">Граммы меняются прямо в строке. Чтобы перенести продукт, нажми «перенести» под его названием или зажми строку и перетащи</div>`;
+  if(list.length) h+=`<div class="tiny" style="text-align:center;margin:-4px 0 12px">Граммы меняются прямо в строке. Чтобы перенести продукт или поменять порядок, потяни за значок ⠿ слева, либо нажми «перенести» под названием</div>`;
   // графики за 14 дней
   const days=[]; for(let i=13;i>=0;i--) days.push(shiftDay(todayISO(),-i));
   const kp=[], pp=[];
@@ -1211,78 +1214,75 @@ function foodMove(id,meal){
   const en=(FD().days[fDate()]||[]).find(x=>x.id===id); if(!en) return;
   en.meal=meal; save(); render('food');
 }
-/* Перенос продукта между приёмами пищи: зажать и перетащить */
-let dragSt=null, lastTouch=0, suppressClickUntil=0, dragScroll=null;
-function dpt(e){ const t=(e.touches&&e.touches[0])||(e.changedTouches&&e.changedTouches[0])||e; return {x:t.clientX,y:t.clientY}; }
-function dragBegin(e){
-  if(tab!=='food') return;
-  if(e.type==='mousedown'){ if(Date.now()-lastTouch<800||e.button!==0) return; } else lastTouch=Date.now();
-  const row=e.target.closest&&e.target.closest('.hist[data-eid]');
-  if(!row||e.target.closest('button,input,select')) return;
-  const p=dpt(e);
-  dragSt={row:row,id:row.dataset.eid,x0:p.x,y0:p.y,x:p.x,y:p.y,active:false,ghost:null,target:null,l:0,t:0};
-  dragSt.timer=setTimeout(dragActivate,e.type==='mousedown'?200:350);
-}
-function dragActivate(){
-  const d=dragSt; if(!d) return;
-  d.active=true;
-  const r=d.row.getBoundingClientRect();
-  const g=d.row.cloneNode(true);
+/* Перенос и порядок: потяни за значок ⠿ слева у строки продукта */
+let dg=null;
+function dgStart(e,id){
+  if(e.pointerType==='mouse'&&e.button!==0) return;
+  const handle=e.currentTarget;
+  const row=handle.closest('.hist[data-eid]'); if(!row) return;
+  e.preventDefault();
+  try{ handle.setPointerCapture(e.pointerId); }catch(x){}
+  const r=row.getBoundingClientRect();
+  const g=row.cloneNode(true);
   g.className='dragghost'; g.removeAttribute('data-eid');
-  g.querySelectorAll('button').forEach(b=>b.remove());
+  g.querySelectorAll('button,select').forEach(b=>b.remove());
   g.style.width=r.width+'px'; g.style.left=r.left+'px'; g.style.top=r.top+'px';
-  document.body.appendChild(g); d.ghost=g;
-  d.row.style.opacity='.3';
-  ['touchmove','touchend','touchcancel'].forEach(t=>d.row.addEventListener(t,t==='touchmove'?dragMoveEv:dragEndEv,{passive:false}));
+  document.body.appendChild(g);
+  row.style.opacity='.3';
   document.body.classList.add('dragging');
-  if(navigator.vibrate) try{ navigator.vibrate(25); }catch(e){}
-  dragScroll=setInterval(()=>{
-    if(d.y<100) window.scrollBy(0,-14); else if(d.y>window.innerHeight-130) window.scrollBy(0,14);
-    dragHover();
+  if(navigator.vibrate) try{ navigator.vibrate(20); }catch(x){}
+  dg={id:id,row:row,ghost:g,x0:e.clientX,y0:e.clientY,x:e.clientX,y:e.clientY,pid:e.pointerId,card:null,before:null};
+  dg.timer=setInterval(()=>{
+    if(!dg) return;
+    if(dg.y<110) window.scrollBy(0,-14); else if(dg.y>window.innerHeight-130) window.scrollBy(0,14);
+    dgHover();
   },30);
+  dgHover();
 }
-function dragHover(){
-  const d=dragSt; if(!d||!d.active) return;
+function dgHover(){
+  const d=dg; if(!d) return;
   d.ghost.style.transform='translate('+(d.x-d.x0)+'px,'+(d.y-d.y0)+'px)';
   const el=document.elementFromPoint(d.x,d.y);
   const card=el&&el.closest?el.closest('.mealcard'):null;
   document.querySelectorAll('.mealcard.droptarget').forEach(c=>{ if(c!==card) c.classList.remove('droptarget'); });
-  if(card) card.classList.add('droptarget');
-  d.target=card?card.dataset.meal:null;
-  if(d.target) d.last=d.target;
-}
-function dragMoveEv(e){
-  const d=dragSt; if(!d) return;
-  const p=dpt(e); d.x=p.x; d.y=p.y;
-  if(!d.active){
-    if(Math.hypot(p.x-d.x0,p.y-d.y0)>8){ clearTimeout(d.timer); dragSt=null; }
-    return;
+  document.querySelectorAll('.hist.dropbefore').forEach(c=>c.classList.remove('dropbefore'));
+  d.card=card; d.before=null;
+  if(!card) return;
+  card.classList.add('droptarget');
+  const rows=[...card.querySelectorAll('.hist[data-eid]')].filter(r=>r!==d.row);
+  for(const r of rows){
+    const b=r.getBoundingClientRect();
+    if(d.y<b.top+b.height/2){ d.before=r.dataset.eid; r.classList.add('dropbefore'); break; }
   }
-  if(e.cancelable) e.preventDefault();
-  dragHover();
 }
-function dragEndEv(e){
-  const d=dragSt; if(!d) return;
-  clearTimeout(d.timer);
-  if(!d.active){ dragSt=null; return; }
-  suppressClickUntil=Date.now()+500;
-  clearInterval(dragScroll); dragScroll=null;
+function dgMove(e){
+  if(!dg||e.pointerId!==dg.pid) return;
+  dg.x=e.clientX; dg.y=e.clientY;
+  if(e.cancelable) e.preventDefault();
+  dgHover();
+}
+function dgEnd(e){
+  const d=dg; if(!d||(e&&e.pointerId!==d.pid)) return;
+  clearInterval(d.timer); dg=null;
   d.ghost.remove(); d.row.style.opacity='';
   document.body.classList.remove('dragging');
   document.querySelectorAll('.mealcard.droptarget').forEach(c=>c.classList.remove('droptarget'));
-  dragSt=null;
-  const en=(FD().days[fDate()]||[]).find(x=>x.id===d.id);
-  const tg=d.target||d.last;
-  if(en&&tg&&tg!==en.meal){ en.meal=tg; save(); render('food'); }
+  document.querySelectorAll('.hist.dropbefore').forEach(c=>c.classList.remove('dropbefore'));
+  if(!d.card) return;
+  const meal=d.card.dataset.meal;
+  const list=FD().days[fDate()]||[];
+  const i=list.findIndex(x=>x.id===d.id); if(i<0) return;
+  const en=list.splice(i,1)[0];
+  en.meal=meal;
+  let j=-1;
+  if(d.before) j=list.findIndex(x=>x.id===d.before);
+  if(j<0){
+    let last=-1; list.forEach((x,k)=>{ if(x.meal===meal) last=k; });
+    j=last>=0?last+1:list.length;
+  }
+  list.splice(j,0,en);
+  save(); render('food');
 }
-document.addEventListener('touchstart',dragBegin,{passive:true});
-document.addEventListener('touchmove',dragMoveEv,{passive:false});
-document.addEventListener('touchend',dragEndEv);
-document.addEventListener('touchcancel',dragEndEv);
-document.addEventListener('mousedown',dragBegin);
-document.addEventListener('mousemove',dragMoveEv);
-document.addEventListener('mouseup',dragEndEv);
-document.addEventListener('click',e=>{ if(Date.now()<suppressClickUntil){ e.stopPropagation(); e.preventDefault(); } },true);
 
 /* Стартовые продукты (с карточек магазина). Добавляются в «мои продукты», если их там ещё нет. Значения на 100 г */
 const PRESET_PRODUCTS=[
@@ -1365,9 +1365,9 @@ function paintResults(){
   const q=((document.getElementById('fQ')||{}).value||'').trim().toLowerCase();
   const F=FD();
   let loc=F.products.filter(p=>!q||(p.name+' '+(p.brand||'')).toLowerCase().includes(q));
-  loc.sort((a,b)=>(b.used||0)-(a.used||0));
-  loc=loc.slice(0,15); foodUI.loc=loc;
-  let h=`<div class="card"><h2>${q?'Мои продукты':'Недавние и мои продукты'}</h2>`;
+  loc.sort((a,b)=>a.name.localeCompare(b.name,'ru'));
+  foodUI.loc=loc;
+  let h=`<div class="card"><h2>Мои продукты</h2>`;
   if(!loc.length) h+=`<div class="tiny">${q?'Среди твоих продуктов такого нет.':'Пока пусто. Найди продукт в базе или введи вручную, он сохранится здесь.'}</div>`;
   else h+=loc.map((p,i)=>`<div class="hist pick" onclick="foodSel('loc',${i})"><div style="min-width:0"><b>${esc(p.name)}</b>${prodLine(p)}</div></div>`).join('');
   h+=`</div>`;
