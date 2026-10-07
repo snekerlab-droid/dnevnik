@@ -218,8 +218,9 @@ body.dragging{-webkit-user-select:none;user-select:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'4.0', date:'2026-10-07'};
+const BUILD = {v:'4.1', date:'2026-10-07'};
 const CHANGELOG = [
+  {v:'4.1', d:'2026-10-07', t:'Еда: можно копировать весь день или отдельный приём пищи на другую дату (по умолчанию на следующий день).'},
   {v:'4.0', d:'2026-10-07', t:'Убраны два фарша «Индилайт» из списка «Мои продукты». Котлеты остались.'},
   {v:'3.9', d:'2026-10-07', t:'В списке «Мои продукты» слева у каждого продукта теперь аккуратное квадратное фото (с твоих карточек, подрезано и отцентровано). Продукты без фото показывают буквенную заглушку. Продукты из Open Food Facts сохраняются вместе с их фото, если оно там есть.'},
   {v:'3.8', d:'2026-10-07', t:'В дневнике питания страница больше не прыгает вверх при переносе продукта, смене граммов и удалении: остаётся там, где ты был.'},
@@ -1114,6 +1115,7 @@ function FD(){
   return f;
 }
 let foodDate=null;
+let foodCopy=null;
 function fDate(){ return foodDate||todayISO(); }
 function shiftDay(iso,n){ const d=new Date(iso+'T12:00:00'); d.setDate(d.getDate()+n); return localISO(d); }
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1145,6 +1147,8 @@ function viewFood(){
       <button class="btn sec" style="flex:0 0 48px;padding:10px 0" onclick="foodSetDate('${shiftDay(date,1)}')">›</button>
     </div>
     <div style="margin-top:8px"><input type="date" value="${date}" onchange="foodSetDate(this.value)"></div>
+    ${list.length&&!foodCopy?`<div style="margin-top:8px"><button class="btn sec" onclick="foodCopyOpen('all')">Копировать весь день</button></div>`:''}
+    ${foodCopy?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"><div class="tiny" style="margin-bottom:6px">Копируем: <b>${foodCopy==='all'?'весь день':esc((MEALS.find(m=>m[0]===foodCopy)||[])[1]||'')}</b>. Куда:</div><input type="date" id="cpDate" value="${shiftDay(date,1)}"><div class="row" style="margin-top:8px"><button class="btn" onclick="foodCopyDo()">Скопировать</button><button class="btn sec" onclick="foodCopyCancel()">Отмена</button></div><div class="tiny" style="margin-top:6px">Продукты добавятся к тому, что уже есть в этот день</div></div>`:''}
   </div>`;
   h+=`<div class="card">
     <div class="kbig">${Math.round(tot.k)}<small style="font-size:13px;font-weight:500;color:var(--muted)"> / ${g.k} ккал</small></div>
@@ -1160,7 +1164,7 @@ function viewFood(){
   MEALS.forEach(([mk,mn])=>{
     const ml=list.filter(e=>e.meal===mk), mt=dayTot(ml);
     h+=`<div class="card mealcard" data-meal="${mk}">
-      <div class="mealhead"><h2 style="margin:0">${mn}</h2><span class="tiny">${ml.length?Math.round(mt.k)+' ккал':''}</span></div>
+      <div class="mealhead"><h2 style="margin:0">${mn}</h2><span class="tiny">${ml.length?Math.round(mt.k)+' ккал · <a href="#" style="color:var(--accent);text-decoration:none" onclick="foodCopyOpen(\''+mk+'\');return false">копировать</a>':''}</span></div>
       ${ml.map(e=>{ const x=eCalc(e); return `<div class="hist" data-eid="${e.id}"><div class="dh" onpointerdown="dgStart(event,'${e.id}')" onpointermove="dgMove(event)" onpointerup="dgEnd(event)" onpointercancel="dgEnd(event)">⠿</div><div style="flex:1;min-width:0" onclick="var i=this.parentNode.querySelector('.gin');i.focus();i.select()">
         <b>${esc(e.name)}</b>
         <div class="tiny">${Math.round(x.k)} ккал · Б ${Math.round(x.p)} · Ж ${Math.round(x.f)} · У ${Math.round(x.c)}</div>
@@ -1185,7 +1189,19 @@ function viewFood(){
   }
   return h;
 }
-function foodSetDate(d){ if(!d) return; foodDate=d; render('food'); }
+function foodSetDate(d){ if(!d) return; foodDate=d; foodCopy=null; render('food'); }
+function foodCopyOpen(src){ foodCopy=src; render('food'); const el=document.getElementById('cpDate'); if(el) el.scrollIntoView({block:'center'}); }
+function foodCopyCancel(){ foodCopy=null; render('food'); }
+function foodCopyDo(){
+  const F=FD(), from=fDate(), to=(document.getElementById('cpDate')||{}).value;
+  if(!to){ alert('Выбери дату.'); return; }
+  if(to===from){ alert('Выбери другую дату.'); return; }
+  const src=(F.days[from]||[]).filter(e=>foodCopy==='all'||e.meal===foodCopy);
+  if(!src.length){ foodCopy=null; render('food'); return; }
+  const dst=(F.days[to]=F.days[to]||[]);
+  src.forEach(e=>dst.push(Object.assign({},e,{id:Math.random().toString(36).slice(2,9)})));
+  foodCopy=null; foodDate=to; save(); render('food'); window.scrollTo(0,0);
+}
 function foodSaveGoals(){
   const F=FD(), v=id=>num(document.getElementById(id).value);
   const k=v('gK'),p=v('gP'),f=v('gF'),c=v('gC');
