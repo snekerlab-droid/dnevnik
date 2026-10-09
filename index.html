@@ -27,6 +27,18 @@
     --accent:#3987e5;
   }
 }
+
+/* фото-отчёт */
+.phgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.phslot{text-align:center}
+.phimg{aspect-ratio:3/4;border-radius:10px;border:1px dashed var(--axis);background:var(--surface-1);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--muted);font-size:26px;cursor:pointer}
+.phimg img{width:100%;height:100%;object-fit:cover;display:block}
+.phslot .tiny{margin-top:4px}
+.phsel{width:100%;background:var(--surface-1);color:var(--text-primary);border:1px solid var(--axis);border-radius:10px;padding:10px;font:inherit;font-size:14px}
+.phlab{font-size:12px;color:var(--muted);margin:10px 0 4px}
+.phview{position:fixed;inset:0;z-index:100;background:#000;display:flex;align-items:center;justify-content:center}
+.phview img{max-width:100%;max-height:100%;object-fit:contain}
+.phview .x{position:absolute;top:calc(12px + env(safe-area-inset-top));right:14px;color:#fff;font-size:15px;background:rgba(255,255,255,.18);border-radius:10px;padding:8px 12px}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;padding:0}
 body{
@@ -218,8 +230,9 @@ body.dragging{-webkit-user-select:none;user-select:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'4.6', date:'2026-10-09'};
+const BUILD = {v:'4.7', date:'2026-10-09'};
 const CHANGELOG = [
+  {v:'4.7', d:'2026-10-09', t:'Фото-отчёт на вкладке «Тело»: три ракурса (спереди, сбоку, сзади), любая дата, сравнение «было и стало», отдельная резервная копия фото.'},
   {v:'4.6', d:'2026-10-09', t:'Новая программа: 4 дня, верх и низ по кругу (A тяжёлый, B объёмный). Добавлены жим гантелей на наклонной, тяга верхнего блока и пресс с записью веса. Старая история сохранена.'},
   {v:'4.5', d:'2026-10-08', t:'Добавлены продукты: молоко 0,5% Parmalat Dietalat и пудинг Hyper High Protein шоколадный (порция 200 г).'},
   {v:'4.4', d:'2026-10-07', t:'Гречка и рис: при добавлении по умолчанию 1 порция (один варочный пакет, 100 г).'},
@@ -384,6 +397,7 @@ function save(){
   catch(e){ memoryOnly=true; mem=S; }
 }
 let S=loadState();
+if(!Array.isArray(S.photos)) S.photos=[];
 
 /* ============================================================
    УТИЛИТЫ
@@ -985,6 +999,7 @@ function viewBody(){
   h+=`<div class="card"><h2>Талия</h2>
       <div data-chart='${JSON.stringify(tpts).replace(/'/g,"&apos;")}' data-unit=" см">${lineChart(tpts,{unit:' см',ylab:'Талия, см',title:'Обхват талии'})}</div>
       <div class="tiny" style="margin-top:8px">Талия честнее весов: на рекомпозиции вес может стоять неделями, а сантиметры уходить.</div></div>`;
+  h+=viewPhotos();
   if(b.length){
     h+=`<div class="card"><h2>Все замеры</h2>
       ${b.slice().reverse().map(x=>`<div class="hist"><div>${fmtDate(x.date)}<div class="tiny">${x.weight!=null?x.weight+' кг':'—'}${x.waist!=null?' · '+x.waist+' см':''}</div></div>
@@ -1001,6 +1016,155 @@ function addBody(){
   save(); render('body');
 }
 function delBody(date){ S.body=S.body.filter(x=>x.date!==date); save(); render('body'); }
+
+
+/* ============================================================
+   ФОТО-ОТЧЁТ  (файлы лежат в IndexedDB, в localStorage только список)
+   ============================================================ */
+const ANGLES=[['f','Спереди'],['s','Сбоку'],['b','Сзади']];
+let phDate=null, phCmp={a:null,b:null}, phCache={};
+function phDB(){
+  return new Promise((res,rej)=>{
+    try{
+      const r=indexedDB.open('dnevnik-photos',1);
+      r.onupgradeneeded=()=>r.result.createObjectStore('p');
+      r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+    }catch(e){ rej(e); }
+  });
+}
+async function phPut(id,blob){ const db=await phDB(); return new Promise((res,rej)=>{ const t=db.transaction('p','readwrite'); t.objectStore('p').put(blob,id); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); }); }
+async function phGet(id){ const db=await phDB(); return new Promise((res,rej)=>{ const r=db.transaction('p').objectStore('p').get(id); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function phDel(id){ const db=await phDB(); return new Promise((res,rej)=>{ const t=db.transaction('p','readwrite'); t.objectStore('p').delete(id); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); }); }
+async function phUrl(id){
+  if(phCache[id]) return phCache[id];
+  try{ const b=await phGet(id); if(!b) return null; return (phCache[id]=URL.createObjectURL(b)); }catch(e){ return null; }
+}
+function phHydrate(){
+  document.querySelectorAll('img[data-pid]').forEach(async im=>{ const u=await phUrl(im.dataset.pid); if(u) im.src=u; });
+}
+/* Уменьшаем фото: длинная сторона 1280 px, JPEG. Файл выходит 200–400 КБ вместо 5–10 МБ */
+async function phShrink(file){
+  let bmp;
+  try{ bmp=await createImageBitmap(file,{imageOrientation:'from-image'}); }
+  catch(e){
+    bmp=await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=URL.createObjectURL(file); });
+  }
+  const w=bmp.width||bmp.naturalWidth, h=bmp.height||bmp.naturalHeight;
+  const k=Math.min(1,1280/Math.max(w,h));
+  const c=document.createElement('canvas'); c.width=Math.round(w*k); c.height=Math.round(h*k);
+  c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  return new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('toBlob')),'image/jpeg',0.82));
+}
+function phHas(date,a){ return S.photos.some(p=>p.date===date&&p.angle===a); }
+function phDates(){ return [...new Set(S.photos.map(p=>p.date))].sort(); }
+function phThumb(date,a){
+  const id=date+'|'+a;
+  return phHas(date,a) ? `<img data-pid="${id}" alt="" onclick="event.stopPropagation();phView('${id}')">` : '';
+}
+function viewPhotos(){
+  const dates=phDates();
+  const cur=phDate||todayISO();
+  let h=`<div class="card"><h2>Фото-отчёт</h2>
+    <div class="phlab" style="margin-top:0">Дата съёмки</div>
+    <input type="date" id="phDate" value="${cur}" onchange="phDate=this.value;render('body')">
+    <div style="height:10px"></div>
+    <div class="phgrid">${ANGLES.map(([a,n])=>`<div class="phslot">
+      <div class="phimg" onclick="document.getElementById('phf-${a}').click()">${phHas(cur,a)?`<img data-pid="${cur}|${a}" alt="">`:'+'}</div>
+      <div class="tiny">${n}${phHas(cur,a)?' · заменить':''}</div>
+      <input type="file" id="phf-${a}" accept="image/*" class="hidden" onchange="phAdd('${a}',this)"></div>`).join('')}</div>
+    <div class="tiny" style="margin-top:10px">Нажми на рамку, чтобы снять или выбрать из галереи. Для старых фото поставь нужную дату выше. Фото сжимаются и хранятся только на этом устройстве.</div>
+    <details><summary>Как снимать, чтобы фото можно было сравнивать</summary>
+      <div class="small" style="margin-top:8px">
+      <b>Три ракурса:</b> спереди, сбоку (всегда одним и тем же боком), сзади. Руки свободно вдоль тела, живот не втягивай и не напрягай.<br>
+      <b>Время:</b> раз в 2 недели в день взвешивания, утром натощак, после туалета. Вечером живот и вода дают другой вид.<br>
+      <b>Место и свет:</b> одно и то же место, ровный свет спереди, не контровой. Фон простой.<br>
+      <b>Камера:</b> телефон на уровне пупка, на штативе или упоре, расстояние 2 – 3 метра, в полный рост с запасом сверху и снизу. Одна и та же камера, без фильтров и без портретного режима.<br>
+      <b>Одежда:</b> одни и те же плавки или шорты. Волосы и обувь неважны, а вот поза и расстояние должны совпадать.</div>
+    </details></div>`;
+  if(dates.length){
+    const a=phCmp.a&&dates.includes(phCmp.a)?phCmp.a:dates[0];
+    const b=phCmp.b&&dates.includes(phCmp.b)?phCmp.b:dates[dates.length-1];
+    const opts=sel=>dates.map(d=>`<option value="${d}"${d===sel?' selected':''}>${fmtDate(d)} ${d.slice(0,4)}</option>`).join('');
+    const row=d=>`<div class="phgrid" style="margin-top:6px">${ANGLES.map(([x])=>`<div class="phimg" style="cursor:default">${phHas(d,x)?`<img data-pid="${d}|${x}" alt="" onclick="phView('${d}|${x}')">`:'<span style="font-size:12px">нет фото</span>'}</div>`).join('')}</div>`;
+    h+=`<div class="card"><h2>Сравнение</h2>
+      <div class="phlab" style="margin-top:0">Было</div>
+      <select class="phsel" onchange="phCmp.a=this.value;render('body')">${opts(a)}</select>${row(a)}
+      <div class="phlab">Стало</div>
+      <select class="phsel" onchange="phCmp.b=this.value;render('body')">${opts(b)}</select>${row(b)}
+      ${dates.length<2?'<div class="tiny" style="margin-top:8px">Для сравнения нужны фото минимум за две даты.</div>':'<div class="tiny" style="margin-top:8px">Нажми на фото, чтобы открыть на весь экран.</div>'}
+    </div>`;
+    h+=`<div class="card"><h2>Все фото-отчёты</h2>
+      ${dates.slice().reverse().map(d=>`<div class="hist"><div style="flex:1">
+        <div>${fmtDate(d)} ${d.slice(0,4)}</div>
+        <div class="phgrid" style="margin-top:6px;max-width:260px">${ANGLES.map(([x])=>`<div class="phimg" style="font-size:11px;cursor:default">${phHas(d,x)?phThumb(d,x):'—'}</div>`).join('')}</div></div>
+        <button class="btn ghost" onclick="phDelDate('${d}')">удалить</button></div>`).join('')}</div>`;
+  }
+  return h;
+}
+async function phAdd(a,inp){
+  const f=inp.files&&inp.files[0]; if(!f) return;
+  const date=document.getElementById('phDate').value||todayISO();
+  try{
+    const blob=await phShrink(f);
+    const id=date+'|'+a;
+    await phPut(id,blob);
+    if(phCache[id]){ URL.revokeObjectURL(phCache[id]); delete phCache[id]; }
+    S.photos=S.photos.filter(p=>!(p.date===date&&p.angle===a));
+    S.photos.push({date, angle:a});
+    phDate=date; save();
+    try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+    render('body');
+  }catch(e){ alert('Не получилось сохранить фото: браузер не даёт места или не поддерживает хранилище.'); }
+  inp.value='';
+}
+async function phDelDate(d){
+  if(!confirm('Удалить фото за '+fmtDate(d)+'?')) return;
+  for(const p of S.photos.filter(x=>x.date===d)){
+    const id=d+'|'+p.angle;
+    try{ await phDel(id); }catch(e){}
+    if(phCache[id]){ URL.revokeObjectURL(phCache[id]); delete phCache[id]; }
+  }
+  S.photos=S.photos.filter(p=>p.date!==d); save(); render('body');
+}
+async function phView(id){
+  const u=await phUrl(id); if(!u) return;
+  const o=document.createElement('div'); o.className='phview';
+  o.innerHTML=`<img src="${u}" alt=""><button class="x">закрыть</button>`;
+  o.onclick=()=>o.remove();
+  document.body.appendChild(o);
+}
+/* Резервная копия фото отдельным файлом: основной файл остаётся лёгким */
+async function phExport(){
+  if(!S.photos.length){ alert('Фото пока нет.'); return; }
+  try{
+    const out=[];
+    for(const p of S.photos){
+      const b=await phGet(p.date+'|'+p.angle); if(!b) continue;
+      const data=await new Promise(r=>{ const fr=new FileReader(); fr.onload=()=>r(fr.result); fr.readAsDataURL(b); });
+      out.push({date:p.date, angle:p.angle, data});
+    }
+    const blob=new Blob([JSON.stringify({photos:out})],{type:'application/json'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='dnevnik-foto-'+todayISO()+'.json';
+    document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },1000);
+  }catch(e){ alert('Не получилось собрать фото.'); }
+}
+function phImport(inp){
+  const f=inp.files&&inp.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=async()=>{
+    try{
+      const o=JSON.parse(r.result); if(!o||!Array.isArray(o.photos)) throw 0;
+      for(const p of o.photos){
+        const blob=await (await fetch(p.data)).blob();
+        await phPut(p.date+'|'+p.angle, blob);
+        if(phCache[p.date+'|'+p.angle]){ URL.revokeObjectURL(phCache[p.date+'|'+p.angle]); delete phCache[p.date+'|'+p.angle]; }
+        S.photos=S.photos.filter(x=>!(x.date===p.date&&x.angle===p.angle)); S.photos.push({date:p.date, angle:p.angle});
+      }
+      save(); alert('Загружено фото: '+o.photos.length); render('data');
+    }catch(e){ alert('Не похоже на файл с фото этого дневника.'); }
+  };
+  r.readAsText(f); inp.value='';
+}
 
 /* ============================================================
    ЭКРАН: ДАННЫЕ
@@ -1040,6 +1204,12 @@ function viewData(){
     <div style="height:8px"></div>
     <button class="btn sec" onclick="document.getElementById('imp').click()">Загрузить из файла</button>
     <input type="file" id="imp" accept="application/json,.json" class="hidden" onchange="importData(this)">
+    <div style="height:14px"></div>
+    <p class="small">Фото в этот файл не входят, они сохраняются отдельным файлом (<b>${S.photos.length}</b> шт.).</p>
+    <button class="btn sec" onclick="phExport()">Выгрузить фото</button>
+    <div style="height:8px"></div>
+    <button class="btn sec" onclick="document.getElementById('impf').click()">Загрузить фото из файла</button>
+    <input type="file" id="impf" accept="application/json,.json" class="hidden" onchange="phImport(this)">
   </div>
   <div class="card">
     <h2>Цикл</h2>
@@ -1075,6 +1245,7 @@ function importData(inp){
       const o=JSON.parse(r.result);
       if(!o||!Array.isArray(o.workouts)) throw 0;
       S=Object.assign({workouts:[],body:[],draft:null,startDate:null},o);
+      if(!Array.isArray(S.photos)) S.photos=[];
       save(); alert('Загружено: '+S.workouts.length+' тренировок.'); render('home');
     }catch(e){ alert('Не похоже на файл этого дневника.'); }
   };
@@ -1082,9 +1253,11 @@ function importData(inp){
 }
 function resetCycle(){ if(!confirm('Начать 8-недельный цикл заново с сегодняшнего дня?')) return; S.startDate=todayISO(); save(); render('data'); }
 function wipe(){
-  if(!confirm('Стереть ВСЕ тренировки и замеры? Это необратимо.')) return;
+  if(!confirm('Стереть ВСЕ тренировки, замеры и фото? Это необратимо.')) return;
   if(!confirm('Точно? Сначала лучше выгрузить резервную копию.')) return;
-  S={workouts:[],body:[],draft:null,startDate:null}; draftLive=null; save(); render('home');
+  S={workouts:[],body:[],photos:[],draft:null,startDate:null}; draftLive=null; save();
+  try{ indexedDB.deleteDatabase('dnevnik-photos'); phCache={}; }catch(e){}
+  render('home');
 }
 
 /* ============================================================
@@ -1654,7 +1827,7 @@ function stopScan(){
 let tab='home', justFinished=null;
 function render(t){
   // В дневнике питания перерисовка не должна бросать страницу вверх: запоминаем прокрутку
-  const keepY=(tab==='food'&&(!t||t==='food'))?window.scrollY:null;
+  const keepY=((tab==='food'&&(!t||t==='food'))||(tab==='body'&&t==='body'))?window.scrollY:null;
   if(t) tab=t;
   const v=document.getElementById('view');
   const map={home:viewHome, workout:viewWorkout, progress:viewProgress, body:viewBody, food:viewFood, foodadd:viewFoodAdd, data:viewData, edit:viewEdit};
@@ -1668,6 +1841,7 @@ function render(t){
     if(w){ w.dataset.pts=host.dataset.chart; w.dataset.unit=host.dataset.unit||''; }
   });
   wireCharts();
+  if(tab==='body') phHydrate();
   if(tab==='foodadd') paintResults();
   const titles={home:'Дневник тренировок',workout:'Тренировка',progress:'Прогресс',body:'Тело и замеры',food:'Дневник питания',foodadd:'Добавить еду',data:'Данные',edit:'Правка тренировки'};
   document.getElementById('hTitle').textContent=titles[tab]||'Дневник';
