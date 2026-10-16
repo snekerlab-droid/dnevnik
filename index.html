@@ -186,6 +186,12 @@ summary::-webkit-details-marker{display:none}
 input.left{text-align:left;padding:10px 12px}
 .pick{cursor:pointer}
 .pick:active{background:var(--plane)}
+.pick.picked{background:color-mix(in srgb,var(--accent) 13%,transparent);box-shadow:inset 3px 0 0 var(--accent)}
+.pickchk{flex:0 0 auto;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--axis);margin-left:8px;display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;font-weight:700}
+.pick.picked .pickchk{background:var(--accent);border-color:var(--accent)}
+.basketbar{position:fixed;left:0;right:0;bottom:calc(58px + env(safe-area-inset-bottom));z-index:35;padding:0 14px;pointer-events:none}
+.basketbar>div{max-width:640px;margin:0 auto;background:var(--card);border:1px solid var(--accent);border-radius:14px;padding:10px 12px;display:flex;align-items:center;gap:10px;box-shadow:0 6px 20px rgba(0,0,0,.18);pointer-events:auto}
+.basketbar .btn{width:auto;padding:10px 14px;font-size:14px}
 .mealhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
 .gin{width:68px;padding:7px 4px;font-size:15px}
 .hist[data-eid]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
@@ -230,8 +236,9 @@ body.dragging{-webkit-user-select:none;user-select:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'4.9', date:'2026-10-13'};
+const BUILD = {v:'4.10', date:'2026-10-16'};
 const CHANGELOG = [
+  {v:'4.10', d:'2026-10-16', t:'Дневник питания: можно отметить сразу несколько продуктов (в том числе из разных поисков и базы) и добавить их одной кнопкой.'},
   {v:'4.9', d:'2026-10-13', t:'Программа выровнена: 6, 5, 6, 5 упражнений по дням вместо 7, 5, 8, 6. Бицепс на дне 2, носки только на дне 4, сгибание ног только на дне 2. На дне 3 жимы, тяги, плечи и пресс.'},
   {v:'4.8', d:'2026-10-11', t:'Порции по умолчанию: гречка и рис 80 г (один пакет), яйцо 55 г (одно яйцо).'},
   {v:'4.7', d:'2026-10-09', t:'Фото-отчёт на вкладке «Тело»: три ракурса (спереди, сбоку, сзади), любая дата, сравнение «было и стало», отдельная резервная копия фото.'},
@@ -1579,9 +1586,9 @@ function seedProducts(){
 seedProducts();
 
 /* ---------- добавление продукта ---------- */
-let foodUI={meal:'b',res:[],loc:[],st:'',sel:null,selSrc:null,tok:0};
+let foodUI={meal:'b',res:[],loc:[],st:'',sel:null,selSrc:null,tok:0,basket:[]};
 let scanStream=null, scanTimer=null;
-function foodOpenAdd(meal){ foodUI={meal,res:[],loc:[],st:'',sel:null,selSrc:null,tok:0}; render('foodadd'); }
+function foodOpenAdd(meal){ foodUI={meal,res:[],loc:[],st:'',sel:null,selSrc:null,tok:0,basket:[]}; render('foodadd'); }
 function foodBack(){ stopScan(); render('food'); }
 function viewFoodAdd(){
   const mn=(MEALS.find(m=>m[0]===foodUI.meal)||[])[1]||'';
@@ -1592,11 +1599,13 @@ function viewFoodAdd(){
       <button class="btn" onclick="foodOnline()">Искать в базе</button>
       <button class="btn sec" onclick="foodScan()">📷 Штрихкод</button>
     </div>
-    <div class="tiny" style="margin-top:8px">Нажми на продукт, и он сразу добавится в приём пищи с порцией по умолчанию, граммы поменяешь потом в дневнике. Кнопка «Искать в базе» ищет в Open Food Facts, найденное сохраняется в твоих продуктах.</div>
+    <div class="tiny" style="margin-top:8px">Отмечай сколько нужно продуктов (в том числе после разных поисков), потом нажми «Добавить» внизу. Порция подставится по умолчанию, граммы поменяешь потом в дневнике. Кнопка «Искать в базе» ищет в Open Food Facts, найденное сохраняется в твоих продуктах.</div>
     <div id="fScan"></div>
   </div>
   <div id="fPick"></div>
   <div id="fResults"></div>
+  <div id="fBasket" class="basketbar"></div>
+  <div style="height:70px"></div>
   <div class="card"><details style="margin-top:0"><summary>Нет нигде? Ввести продукт вручную</summary>
     <div style="height:10px"></div>
     <input id="mName" class="left" type="text" placeholder="Название">
@@ -1629,29 +1638,49 @@ function paintResults(){
   foodUI.loc=loc;
   let h=`<div class="card"><h2>Мои продукты</h2>`;
   if(!loc.length) h+=`<div class="tiny">${q?'Среди твоих продуктов такого нет.':'Пока пусто. Найди продукт в базе или введи вручную, он сохранится здесь.'}</div>`;
-  else h+=loc.map((p,i)=>`<div class="hist pick" onclick="foodSel('loc',${i})">${thumb(p)}<div style="min-width:0;flex:1"><b>${esc(p.name)}</b>${prodLine(p)}</div></div>`).join('');
+  else h+=loc.map((p,i)=>`<div class="hist pick${inBasket(p)?' picked':''}" onclick="foodSel('loc',${i})">${thumb(p)}<div style="min-width:0;flex:1"><b>${esc(p.name)}</b>${prodLine(p)}</div><span class="pickchk">${inBasket(p)?'✓':''}</span></div>`).join('');
   h+=`</div>`;
   if(foodUI.st) h+=`<div class="banner">${esc(foodUI.st)}</div>`;
   if(foodUI.res.length){
     h+=`<div class="card"><h2>Open Food Facts</h2>`+
-      foodUI.res.map((p,i)=>`<div class="hist pick" onclick="foodSel('off',${i})"><div style="min-width:0"><b>${esc(p.name)}</b>${prodLine(p)}</div></div>`).join('')+
+      foodUI.res.map((p,i)=>`<div class="hist pick${inBasket(p)?' picked':''}" onclick="foodSel('off',${i})"><div style="min-width:0;flex:1"><b>${esc(p.name)}</b>${prodLine(p)}</div><span class="pickchk">${inBasket(p)?'✓':''}</span></div>`).join('')+
       `<div class="tiny" style="margin-top:8px">Данные вносят сами пользователи, цифры бывают неточными. Сверяй с упаковкой.</div></div>`;
   }
   el.innerHTML=h;
+  paintBasket();
 }
-/* Выбор продукта сразу добавляет его в приём пищи с порцией по умолчанию, граммы правятся потом в дневнике */
-function addEntryFrom(p){
-  const F=FD(), meal=foodUI.meal;
-  const sp=upsertProduct(p);
-  const d=fDate();
-  (F.days[d]=F.days[d]||[]).push({id:Math.random().toString(36).slice(2,9), meal, name:p.name+(p.brand?' ('+p.brand+')':''), g:p.serv||sp.serv||100, k:p.k, p:p.p, f:p.f, c:p.c});
+/* Выбор нескольких продуктов: тап отмечает или снимает отметку, кнопка внизу добавляет все сразу
+   с порцией по умолчанию, граммы правятся потом в дневнике */
+function prodKey(p){ return p.code?'c'+p.code:'n'+(p.name+'|'+(p.brand||'')).toLowerCase(); }
+function inBasket(p){ return foodUI.basket.some(x=>prodKey(x)===prodKey(p)); }
+function foodSel(src,i){
+  const p=(src==='loc'?foodUI.loc:foodUI.res)[i]; if(!p) return;
+  const k=prodKey(p), j=foodUI.basket.findIndex(x=>prodKey(x)===k);
+  if(j>=0) foodUI.basket.splice(j,1); else foodUI.basket.push(p);
+  paintResults();
+}
+function basketG(p){ return p.serv||100; }
+function paintBasket(){
+  const el=document.getElementById('fBasket'); if(!el) return;
+  const b=foodUI.basket;
+  if(!b.length){ el.innerHTML=''; return; }
+  const kcal=b.reduce((a,p)=>a+p.k*basketG(p)/100,0);
+  el.innerHTML=`<div><div style="flex:1;min-width:0"><b>Выбрано: ${b.length}</b><div class="tiny">≈ ${Math.round(kcal)} ккал с порциями по умолчанию</div></div>
+    <button class="btn sec" onclick="foodBasketClear()">Сбросить</button>
+    <button class="btn" onclick="foodBasketAdd()">Добавить</button></div>`;
+}
+function foodBasketClear(){ foodUI.basket=[]; paintResults(); }
+function foodBasketAdd(){
+  const b=foodUI.basket; if(!b.length) return;
+  const F=FD(), meal=foodUI.meal, d=fDate();
+  b.forEach(p=>{
+    const sp=upsertProduct(p);
+    (F.days[d]=F.days[d]||[]).push({id:Math.random().toString(36).slice(2,9), meal, name:p.name+(p.brand?' ('+p.brand+')':''), g:p.serv||sp.serv||100, k:p.k, p:p.p, f:p.f, c:p.c});
+  });
+  foodUI.basket=[];
   save(); stopScan(); render('food');
   const c=document.querySelector('.mealcard[data-meal="'+meal+'"]');
   if(c) c.scrollIntoView({block:'center'});
-}
-function foodSel(src,i){
-  const p=(src==='loc'?foodUI.loc:foodUI.res)[i]; if(!p) return;
-  addEntryFrom(p);
 }
 function paintPick(){
   const el=document.getElementById('fPick'); if(!el) return;
@@ -1707,7 +1736,10 @@ function foodManual(){
   const p=upsertProduct({name, brand:'', k:Math.round(k), p:round(v('mP')||0,1), f:round(v('mF')||0,1), c:round(v('mC')||0,1), serv:v('mS')||null, code:null});
   if(!p.serv && v('mS')) p.serv=v('mS');
   save();
-  addEntryFrom(p);
+  if(!inBasket(p)) foodUI.basket.push(p);
+  ['mName','mK','mP','mF','mC','mS'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
+  const q=document.getElementById('fQ'); if(q) q.value='';
+  paintResults();
 }
 
 /* ---------- Open Food Facts ---------- */
