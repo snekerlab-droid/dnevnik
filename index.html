@@ -143,6 +143,9 @@ input,select{
   appearance:none;font-variant-numeric:tabular-nums;
 }
 input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:var(--accent)}
+input[type=checkbox]{width:22px !important;height:22px;min-width:22px;padding:0;border-radius:6px;flex:0 0 auto;position:relative;cursor:pointer}
+input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}
+input[type=checkbox]:checked::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:700;line-height:1}
 input::placeholder{color:var(--muted);opacity:.55;font-weight:400}
 select{text-align:center;text-align-last:center;padding-right:6px}
 .pickrow{display:grid;grid-template-columns:1.55fr 1fr;gap:8px;margin-bottom:10px}
@@ -250,8 +253,9 @@ body.dragging{-webkit-user-select:none;user-select:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'4.12', date:'2026-10-23'};
+const BUILD = {v:'4.13', date:'2026-10-23'};
 const CHANGELOG = [
+  {v:'4.13', d:'2026-10-23', t:'Фото-сравнение: оставлена только шторка, добавлено автовыравнивание по фигуре (одинаковая высота и центр независимо от зума). Загруженные фото не затронуты.'},
   {v:'4.12', d:'2026-10-23', t:'Правка своих продуктов (КБЖУ, название, порция по умолчанию). Фото-сравнение: ракурс переключается вкладками, фото рядом или режим «шторка», обе даты выбираются сразу. Загруженные фото не затронуты.'},
   {v:'4.11', d:'2026-10-23', t:'Картинка для жареной картошки. Теперь у всех продуктов дневника есть картинки.'},
   {v:'4.10', d:'2026-10-16', t:'Дневник питания: можно отметить сразу несколько продуктов (в том числе из разных поисков и базы) и добавить их одной кнопкой.'},
@@ -1041,7 +1045,7 @@ function delBody(date){ S.body=S.body.filter(x=>x.date!==date); save(); render('
    ФОТО-ОТЧЁТ  (файлы лежат в IndexedDB, в localStorage только список)
    ============================================================ */
 const ANGLES=[['f','Спереди'],['s','Сбоку'],['b','Сзади']];
-let phDate=null, phCmp={a:null,b:null,angle:'f',mode:'side'}, phCache={}, phPos=50;
+let phDate=null, phCmp={a:null,b:null,angle:'f'}, phCache={}, phPos=50;
 function phDB(){
   return new Promise((res,rej)=>{
     try{
@@ -1059,7 +1063,86 @@ async function phUrl(id){
   try{ const b=await phGet(id); if(!b) return null; return (phCache[id]=URL.createObjectURL(b)); }catch(e){ return null; }
 }
 function phHydrate(){
-  document.querySelectorAll('img[data-pid]').forEach(async im=>{ const u=await phUrl(im.dataset.pid); if(u) im.src=u; });
+  document.querySelectorAll('img[data-pid]').forEach(async im=>{
+    const id=im.dataset.pid;
+    const u=im.dataset.al ? await phAlignedUrl(id) : await phUrl(id);
+    if(u&&im.isConnected) im.src=u;
+  });
+}
+/* ---------- Выравнивание по фигуре (MediaPipe Pose, работает на телефоне, фото никуда не уходят) ----------
+   Находим плечи и стопы, масштабируем и сдвигаем кадр так, чтобы фигура на всех фото была одной высоты
+   и по центру. Модель (около 15 МБ) грузится с CDN один раз и дальше берётся из кеша браузера. */
+const POSE_BASE=window.POSE_BASE||'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/';
+const AL_W=720, AL_H=960, AL_SH=0.22, AL_FT=0.93;
+let poseP=null, poseQ=Promise.resolve();
+function phStatus(t){ const e=document.getElementById('phStat'); if(e) e.textContent=t||''; }
+function poseInit(){
+  if(poseP) return poseP;
+  poseP=(async()=>{
+    if(!window.Pose){
+      await new Promise((res,rej)=>{ const sc=document.createElement('script'); sc.src=POSE_BASE+'pose.js'; sc.onload=res; sc.onerror=()=>rej(new Error('pose.js')); document.head.appendChild(sc); });
+    }
+    const ps=new window.Pose({locateFile:f=>POSE_BASE+f});
+    ps.setOptions({modelComplexity:1,smoothLandmarks:false,enableSegmentation:false,minDetectionConfidence:0.4,selfieMode:false});
+    await ps.initialize();
+    return ps;
+  })();
+  poseP.catch(()=>{ poseP=null; });
+  return poseP;
+}
+function phLandmarks(bmp){
+  // По одному: общий экземпляр модели
+  return poseQ=poseQ.then(async()=>{
+    const ps=await poseInit();
+    const k=Math.min(1,1024/Math.max(bmp.width,bmp.height));
+    const c=document.createElement('canvas'); c.width=Math.round(bmp.width*k); c.height=Math.round(bmp.height*k);
+    c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+    return await new Promise(async(res,rej)=>{
+      ps.onResults(r=>res(r.poseLandmarks||null));
+      try{ ps.reset(); await ps.send({image:c}); }catch(e){ rej(e); }  // reset: каждое фото отдельно, без трекинга по прошлому кадру
+    });
+  }).catch(e=>{ throw e; });
+}
+function phPick(lm){
+  if(!lm) return null;
+  const v=i=>lm[i]&&lm[i].visibility>0.4?lm[i]:null;
+  const ls=v(11), rs=v(12); if(!ls||!rs) return null;
+  const feet=[27,28,29,30,31,32].map(v).filter(Boolean); if(!feet.length) return null;
+  const foot=Math.max(...feet.map(q=>q.y)), sh=(ls.y+rs.y)/2;
+  if(foot-sh<0.2) return null;
+  const xs=[(ls.x+rs.x)/2]; const lh=v(23), rh=v(24); if(lh&&rh) xs.push((lh.x+rh.x)/2);
+  return {cx:xs.reduce((a,b)=>a+b,0)/xs.length, sh, foot};
+}
+const alCache={};
+async function phAlignedUrl(id){
+  if(alCache[id]) return alCache[id];
+  const [date,ang]=id.split('|');
+  const ent=S.photos.find(x=>x.date===date&&x.angle===ang);
+  const blob=await phGet(id).catch(()=>null);
+  if(!blob||!ent) return null;
+  const bmp=await createImageBitmap(blob);
+  if(!ent.al&&!ent.alFail){
+    try{
+      phStatus('Определяю фигуру на фото… при первом запуске подгружается модель, это может занять минуту.');
+      const al=phPick(await phLandmarks(bmp));
+      if(al) ent.al=al; else ent.alFail=true;
+      save();
+      phStatus('');
+    }catch(e){ phStatus('Не получилось загрузить модель выравнивания (нужен интернет). Показываю фото как есть.'); return phUrl(id); }
+  }
+  if(!ent.al){
+    phStatus('Не нашёл фигуру целиком на фото за '+fmtDate(date)+' ('+((ANGLES.find(a=>a[0]===ang)||[])[1]||'')+'): нужны плечи и стопы в кадре. Показываю как есть.');
+    return phUrl(id);
+  }
+  const w=bmp.width, h=bmp.height, al=ent.al;
+  const ch=(al.foot-al.sh)*h/(AL_FT-AL_SH);
+  const top=al.sh*h-AL_SH*ch, left=al.cx*w-(ch*AL_W/AL_H)/2, k=AL_H/ch;
+  const c=document.createElement('canvas'); c.width=AL_W; c.height=AL_H;
+  const x=c.getContext('2d'); x.fillStyle='#2a2a28'; x.fillRect(0,0,AL_W,AL_H);
+  x.imageSmoothingQuality='high';
+  x.drawImage(bmp,-left*k,-top*k,w*k,h*k);
+  const out=await new Promise(r=>c.toBlob(r,'image/jpeg',0.9));
+  return (alCache[id]=URL.createObjectURL(out));
 }
 /* Уменьшаем фото: длинная сторона 1280 px, JPEG. Файл выходит 200–400 КБ вместо 5–10 МБ */
 async function phShrink(file){
@@ -1103,23 +1186,18 @@ function viewPhotos(){
   if(dates.length){
     const a=phCmp.a&&dates.includes(phCmp.a)?phCmp.a:dates[0];
     const b=phCmp.b&&dates.includes(phCmp.b)?phCmp.b:dates[dates.length-1];
-    const ang=phCmp.angle||'f', mode=phCmp.mode||'side';
+    const ang=phCmp.angle||'f';
     const opts=sel=>dates.map(d=>`<option value="${d}"${d===sel?' selected':''}>${fmtDate(d)} ${d.slice(0,4)}</option>`).join('');
     const lab=d=>fmtDate(d)+' '+d.slice(0,4);
-    const cell=d=>`<div><div class="phimg" onclick="${phHas(d,ang)?`phView('${d}|${ang}')`:''}">${phHas(d,ang)?`<img data-pid="${d}|${ang}" alt="">`:'<span style="font-size:12px">нет фото</span>'}</div><div class="phcap">${lab(d)}</div></div>`;
-    let view;
-    if(mode==='slider'){
-      view = (phHas(a,ang)&&phHas(b,ang))
-        ? `<div class="phslider" onpointerdown="phSlide(event)" onpointermove="phSlide(event)">
-             <img data-pid="${b}|${ang}" alt="">
-             <img class="phtop" data-pid="${a}|${ang}" alt="" style="clip-path:inset(0 ${100-phPos}% 0 0)">
-             <div class="phline" style="left:${phPos}%"></div><div class="phknob" style="left:${phPos}%">⇄</div>
-             <div class="phbadge" style="left:8px">${lab(a)}</div><div class="phbadge" style="right:8px">${lab(b)}</div>
-           </div><div class="phcap">Двигай линию пальцем. Слева «было», справа «стало».</div>`
-        : `<div class="small" style="margin-top:10px">За одну из дат нет фото этого ракурса. Выбери другой ракурс или дату.</div>`;
-    } else {
-      view = `<div class="phpair">${cell(a)}${cell(b)}</div><div class="phcap">Нажми на фото, чтобы открыть на весь экран.</div>`;
-    }
+    const al=!S.phAlignOff;
+    const view = (phHas(a,ang)&&phHas(b,ang))
+      ? `<div class="phslider" onpointerdown="phSlide(event)" onpointermove="phSlide(event)">
+           <img data-pid="${b}|${ang}" ${al?'data-al="1"':''} alt="">
+           <img class="phtop" data-pid="${a}|${ang}" ${al?'data-al="1"':''} alt="" style="clip-path:inset(0 ${100-phPos}% 0 0)">
+           <div class="phline" style="left:${phPos}%"></div><div class="phknob" style="left:${phPos}%">⇄</div>
+           <div class="phbadge" style="left:8px">${lab(a)}</div><div class="phbadge" style="right:8px">${lab(b)}</div>
+         </div><div class="phcap">Двигай линию пальцем. Слева «было», справа «стало».</div>`
+      : `<div class="small" style="margin-top:10px">За одну из дат нет фото этого ракурса. Выбери другой ракурс или дату.</div>`;
     h+=`<div class="card"><h2>Сравнение</h2>
       <div class="phtabs">${ANGLES.map(([x,n])=>`<button class="${x===ang?'on':''}" onclick="phCmp.angle='${x}';render('body')">${n}</button>`).join('')}</div>
       <div class="phcmprow">
@@ -1127,7 +1205,8 @@ function viewPhotos(){
         <button class="sw" title="Поменять местами" onclick="phCmp.a='${b}';phCmp.b='${a}';render('body')">⇄</button>
         <div><div class="phlab" style="margin-top:0">Стало</div><select class="phsel" onchange="phCmp.b=this.value;render('body')">${opts(b)}</select></div>
       </div>
-      <div class="phtabs" style="margin-top:10px"><button class="${mode==='side'?'on':''}" onclick="phCmp.mode='side';render('body')">Рядом</button><button class="${mode==='slider'?'on':''}" onclick="phCmp.mode='slider';render('body')">Шторка</button></div>
+      <label class="small" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" ${al?'checked':''} onchange="S.phAlignOff=!this.checked;save();render('body')" style="width:auto"> Выровнять по фигуре (одинаковый масштаб и центр)</label>
+      <div class="tiny" id="phStat" style="min-height:16px;margin-top:4px"></div>
       ${view}
       ${dates.length<2?'<div class="tiny" style="margin-top:8px">Для сравнения нужны фото минимум за две даты.</div>':''}
     </div>`;
@@ -1157,6 +1236,7 @@ async function phAdd(a,inp){
     const id=date+'|'+a;
     await phPut(id,blob);
     if(phCache[id]){ URL.revokeObjectURL(phCache[id]); delete phCache[id]; }
+    if(alCache[id]){ URL.revokeObjectURL(alCache[id]); delete alCache[id]; }
     S.photos=S.photos.filter(p=>!(p.date===date&&p.angle===a));
     S.photos.push({date, angle:a});
     phDate=date; save();
@@ -1171,6 +1251,7 @@ async function phDelDate(d){
     const id=d+'|'+p.angle;
     try{ await phDel(id); }catch(e){}
     if(phCache[id]){ URL.revokeObjectURL(phCache[id]); delete phCache[id]; }
+    if(alCache[id]){ URL.revokeObjectURL(alCache[id]); delete alCache[id]; }
   }
   S.photos=S.photos.filter(p=>p.date!==d); save(); render('body');
 }
