@@ -253,8 +253,9 @@ body.dragging{-webkit-user-select:none;user-select:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'4.13', date:'2026-10-23'};
+const BUILD = {v:'4.14', date:'2026-10-23'};
 const CHANGELOG = [
+  {v:'4.14', d:'2026-10-23', t:'Выравнивание фото подстраивается под пару: если на обоих фото видны ноги, берётся длина до самой нижней общей точки (стопы или колени), если ног нет, выравнивание идёт по ширине плеч. Можно снимать по пояс, по колени или в полный рост.'},
   {v:'4.13', d:'2026-10-23', t:'Фото-сравнение: оставлена только шторка, добавлено автовыравнивание по фигуре (одинаковая высота и центр независимо от зума). Загруженные фото не затронуты.'},
   {v:'4.12', d:'2026-10-23', t:'Правка своих продуктов (КБЖУ, название, порция по умолчанию). Фото-сравнение: ракурс переключается вкладками, фото рядом или режим «шторка», обе даты выбираются сразу. Загруженные фото не затронуты.'},
   {v:'4.11', d:'2026-10-23', t:'Картинка для жареной картошки. Теперь у всех продуктов дневника есть картинки.'},
@@ -1065,7 +1066,7 @@ async function phUrl(id){
 function phHydrate(){
   document.querySelectorAll('img[data-pid]').forEach(async im=>{
     const id=im.dataset.pid;
-    const u=im.dataset.al ? await phAlignedUrl(id) : await phUrl(id);
+    const u=im.dataset.al ? await phAlignedUrl(id, im.dataset.pair) : await phUrl(id);
     if(u&&im.isConnected) im.src=u;
   });
 }
@@ -1103,46 +1104,93 @@ function phLandmarks(bmp){
     });
   }).catch(e=>{ throw e; });
 }
+/* Какие части тела видны на фото: плечи обязательны, дальше пояс, колени, стопы (что есть, то и берём) */
 function phPick(lm){
   if(!lm) return null;
-  const v=i=>lm[i]&&lm[i].visibility>0.4?lm[i]:null;
-  const ls=v(11), rs=v(12); if(!ls||!rs) return null;
-  const feet=[27,28,29,30,31,32].map(v).filter(Boolean); if(!feet.length) return null;
-  const foot=Math.max(...feet.map(q=>q.y)), sh=(ls.y+rs.y)/2;
-  if(foot-sh<0.2) return null;
-  const xs=[(ls.x+rs.x)/2]; const lh=v(23), rh=v(24); if(lh&&rh) xs.push((lh.x+rh.x)/2);
-  return {cx:xs.reduce((a,b)=>a+b,0)/xs.length, sh, foot};
+  const ok=i=>lm[i]&&lm[i].visibility>0.5&&lm[i].y>0&&lm[i].y<=1.0?lm[i]:null;
+  const avg=(ids,k)=>{ const q=ids.map(ok).filter(Boolean); return q.length?q.reduce((a,p)=>a+p[k],0)/q.length:null; };
+  const sh=avg([11,12],'y'); if(sh==null) return null;
+  const sx=ok(11)&&ok(12)?Math.abs(lm[11].x-lm[12].x):null;
+  const feet=[29,30,31,32].map(ok).filter(Boolean);
+  const al={ sh, sw:sx, hip:avg([23,24],'y'), knee:avg([25,26],'y'),
+    foot: feet.length?Math.max(...feet.map(q=>q.y)):null };
+  // не даём «видимым» точкам лежать выше плеч или нарушать порядок: так отсекаем глюки модели
+  if(al.hip!=null&&al.hip<=sh) al.hip=null;
+  if(al.knee!=null&&(al.hip==null||al.knee<=al.hip)) al.knee=null;
+  if(al.foot!=null&&(al.knee==null||al.foot<=al.knee)) al.foot=null;
+  const xs=[avg([11,12],'x')]; const hx=avg([23,24],'x'); if(hx!=null) xs.push(hx);
+  al.cx=xs.reduce((a,b)=>a+b,0)/xs.length;
+  if(al.hip==null&&al.sw==null) return null;
+  return al;
 }
-const alCache={};
-async function phAlignedUrl(id){
-  if(alCache[id]) return alCache[id];
+const AL_KEYS=['','hip','knee','foot'], AL_SPAN={1:0.45,2:0.62,3:0.71}, AL_SWF=0.40, AL_SHW=0.25;
+const AL_NAMES={1:'до пояса',2:'до колен',3:'до стоп'};
+function alLevel(al){ return !al?0 : al.foot!=null?3 : al.knee!=null?2 : al.hip!=null?1 : 0; }
+const alCache={}, alBusy={};
+function phDropAl(id){ Object.keys(alCache).filter(k=>k.startsWith(id+'|')).forEach(k=>{ URL.revokeObjectURL(alCache[k]); delete alCache[k]; }); }
+/* Находим фигуру на фото один раз и запоминаем */
+function phEnsure(id){
+  if(alBusy[id]) return alBusy[id];
   const [date,ang]=id.split('|');
   const ent=S.photos.find(x=>x.date===date&&x.angle===ang);
-  const blob=await phGet(id).catch(()=>null);
-  if(!blob||!ent) return null;
-  const bmp=await createImageBitmap(blob);
-  if(!ent.al&&!ent.alFail){
+  if(!ent) return Promise.resolve(null);
+  if(ent.alv!==4){ delete ent.al; delete ent.alFail; ent.alv=4; }
+  if(ent.al||ent.alFail) return Promise.resolve(ent);
+  alBusy[id]=(async()=>{
     try{
+      const blob=await phGet(id); const bmp=await createImageBitmap(blob);
       phStatus('Определяю фигуру на фото… при первом запуске подгружается модель, это может занять минуту.');
       const al=phPick(await phLandmarks(bmp));
       if(al) ent.al=al; else ent.alFail=true;
-      save();
-      phStatus('');
-    }catch(e){ phStatus('Не получилось загрузить модель выравнивания (нужен интернет). Показываю фото как есть.'); return phUrl(id); }
-  }
-  if(!ent.al){
-    phStatus('Не нашёл фигуру целиком на фото за '+fmtDate(date)+' ('+((ANGLES.find(a=>a[0]===ang)||[])[1]||'')+'): нужны плечи и стопы в кадре. Показываю как есть.');
+      save(); phStatus('');
+      return ent;
+    }catch(e){ phStatus('Не получилось загрузить модель выравнивания (нужен интернет). Показываю фото как есть.'); return ent; }
+    finally{ delete alBusy[id]; }
+  })();
+  return alBusy[id];
+}
+/* Выравниваем под пару: берём самую нижнюю часть тела, которая видна на обоих фото */
+async function phAlignedUrl(id, pair){
+  const [da,db,ang]=(pair||'').split('|');
+  const ids=[da+'|'+ang, db+'|'+ang];
+  const ents=await Promise.all(ids.map(phEnsure));
+  const me=ents[ids.indexOf(id)];
+  if(!ents[0]||!ents[1]||ents.some(e=>!e.al&&!e.alFail)) return phUrl(id);   // модель не загрузилась: покажем как есть
+  const bad=ents.find(e=>!e.al);
+  if(bad){
+    phStatus('Не нашёл фигуру (плечи) на фото за '+fmtDate(bad.date)+', показываю как есть.');
     return phUrl(id);
   }
-  const w=bmp.width, h=bmp.height, al=ent.al;
-  const ch=(al.foot-al.sh)*h/(AL_FT-AL_SH);
-  const top=al.sh*h-AL_SH*ch, left=al.cx*w-(ch*AL_W/AL_H)/2, k=AL_H/ch;
+  /* Способ выравнивания зависит от пары:
+     ноги видны на обоих (колени или стопы): масштаб по длине от плеч до самой нижней общей точки;
+     иначе спереди и сзади: по ширине плеч (таз без ног модель угадывает неточно);
+     сбоку без ног: от плеч до пояса. */
+  const L=Math.min(alLevel(ents[0].al), alLevel(ents[1].al));
+  let mode;
+  if(L>=2) mode='span'+L;
+  else if(ang!=='s' && ents.every(e=>e.al.sw>0.04)) mode='sw';
+  else if(L===1) mode='span1';
+  else { phStatus('На одном из фото плохо видно тело, показываю как есть.'); return phUrl(id); }
+  phStatus(mode==='sw' ? 'Выровнено по ширине плеч (на одном из фото не видно ног).' : 'Выровнено '+AL_NAMES[+mode.slice(4)]+' (по тому, что видно на обоих фото).');
+  const key=id+'|'+mode;
+  if(alCache[key]) return alCache[key];
+  const blob=await phGet(id); const bmp=await createImageBitmap(blob);
+  const w=bmp.width, h=bmp.height, al=me.al;
+  let k, left, top;
+  if(mode==='sw'){
+    k=(AL_SWF*AL_W)/(al.sw*w);
+    left=al.cx*w-(AL_W/2)/k; top=al.sh*h-AL_SHW*AL_H/k;
+  } else {
+    const lv=+mode.slice(4), yL=al[AL_KEYS[lv]];
+    const ch=(yL-al.sh)*h/AL_SPAN[lv]; k=AL_H/ch;
+    left=al.cx*w-(ch*AL_W/AL_H)/2; top=al.sh*h-AL_SH*ch;
+  }
   const c=document.createElement('canvas'); c.width=AL_W; c.height=AL_H;
   const x=c.getContext('2d'); x.fillStyle='#2a2a28'; x.fillRect(0,0,AL_W,AL_H);
   x.imageSmoothingQuality='high';
   x.drawImage(bmp,-left*k,-top*k,w*k,h*k);
   const out=await new Promise(r=>c.toBlob(r,'image/jpeg',0.9));
-  return (alCache[id]=URL.createObjectURL(out));
+  return (alCache[key]=URL.createObjectURL(out));
 }
 /* Уменьшаем фото: длинная сторона 1280 px, JPEG. Файл выходит 200–400 КБ вместо 5–10 МБ */
 async function phShrink(file){
@@ -1192,8 +1240,8 @@ function viewPhotos(){
     const al=!S.phAlignOff;
     const view = (phHas(a,ang)&&phHas(b,ang))
       ? `<div class="phslider" onpointerdown="phSlide(event)" onpointermove="phSlide(event)">
-           <img data-pid="${b}|${ang}" ${al?'data-al="1"':''} alt="">
-           <img class="phtop" data-pid="${a}|${ang}" ${al?'data-al="1"':''} alt="" style="clip-path:inset(0 ${100-phPos}% 0 0)">
+           <img data-pid="${b}|${ang}" ${al?'data-al="1"':''} data-pair="${a}|${b}|${ang}" alt="">
+           <img class="phtop" data-pid="${a}|${ang}" ${al?'data-al="1"':''} data-pair="${a}|${b}|${ang}" alt="" style="clip-path:inset(0 ${100-phPos}% 0 0)">
            <div class="phline" style="left:${phPos}%"></div><div class="phknob" style="left:${phPos}%">⇄</div>
            <div class="phbadge" style="left:8px">${lab(a)}</div><div class="phbadge" style="right:8px">${lab(b)}</div>
          </div><div class="phcap">Двигай линию пальцем. Слева «было», справа «стало».</div>`
@@ -1236,7 +1284,7 @@ async function phAdd(a,inp){
     const id=date+'|'+a;
     await phPut(id,blob);
     if(phCache[id]){ URL.revokeObjectURL(phCache[id]); delete phCache[id]; }
-    if(alCache[id]){ URL.revokeObjectURL(alCache[id]); delete alCache[id]; }
+    phDropAl(id);
     S.photos=S.photos.filter(p=>!(p.date===date&&p.angle===a));
     S.photos.push({date, angle:a});
     phDate=date; save();
@@ -1251,7 +1299,7 @@ async function phDelDate(d){
     const id=d+'|'+p.angle;
     try{ await phDel(id); }catch(e){}
     if(phCache[id]){ URL.revokeObjectURL(phCache[id]); delete phCache[id]; }
-    if(alCache[id]){ URL.revokeObjectURL(alCache[id]); delete alCache[id]; }
+    phDropAl(id);
   }
   S.photos=S.photos.filter(p=>p.date!==d); save(); render('body');
 }
