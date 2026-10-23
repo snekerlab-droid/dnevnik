@@ -36,6 +36,20 @@
 .phslot .tiny{margin-top:4px}
 .phsel{width:100%;background:var(--surface-1);color:var(--text-primary);border:1px solid var(--axis);border-radius:10px;padding:10px;font:inherit;font-size:14px}
 .phlab{font-size:12px;color:var(--muted);margin:10px 0 4px}
+.phtabs{display:flex;gap:6px;margin:8px 0}
+.phtabs button{flex:1;padding:8px 4px;border-radius:10px;border:1px solid var(--axis);font-size:13px;color:var(--text-primary)}
+.phtabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.phcmprow{display:grid;grid-template-columns:1fr 40px 1fr;gap:6px;align-items:end}
+.phcmprow .sw{height:40px;border-radius:10px;border:1px solid var(--axis);font-size:16px}
+.phpair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.phpair .phimg{font-size:12px;cursor:pointer}
+.phcap{font-size:12px;color:var(--muted);text-align:center;margin-top:4px}
+.phslider{position:relative;aspect-ratio:3/4;overflow:hidden;border-radius:12px;background:var(--surface-1);touch-action:pan-y;user-select:none;-webkit-user-select:none;margin-top:8px}
+.phslider img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.phslider .phtop{clip-path:inset(0 50% 0 0)}
+.phline{position:absolute;top:0;bottom:0;left:50%;width:2px;margin-left:-1px;background:#fff;box-shadow:0 0 5px rgba(0,0,0,.6);pointer-events:none}
+.phknob{position:absolute;top:50%;left:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:#fff;color:#333;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 1px 6px rgba(0,0,0,.45);pointer-events:none}
+.phbadge{position:absolute;top:8px;padding:3px 8px;border-radius:8px;background:rgba(0,0,0,.55);color:#fff;font-size:12px;pointer-events:none}
 .phview{position:fixed;inset:0;z-index:100;background:#000;display:flex;align-items:center;justify-content:center}
 .phview img{max-width:100%;max-height:100%;object-fit:contain}
 .phview .x{position:absolute;top:calc(12px + env(safe-area-inset-top));right:14px;color:#fff;font-size:15px;background:rgba(255,255,255,.18);border-radius:10px;padding:8px 12px}
@@ -236,8 +250,9 @@ body.dragging{-webkit-user-select:none;user-select:none}
 /* ============================================================
    ВЕРСИЯ
    ============================================================ */
-const BUILD = {v:'4.11', date:'2026-10-23'};
+const BUILD = {v:'4.12', date:'2026-10-23'};
 const CHANGELOG = [
+  {v:'4.12', d:'2026-10-23', t:'Правка своих продуктов (КБЖУ, название, порция по умолчанию). Фото-сравнение: ракурс переключается вкладками, фото рядом или режим «шторка», обе даты выбираются сразу. Загруженные фото не затронуты.'},
   {v:'4.11', d:'2026-10-23', t:'Картинка для жареной картошки. Теперь у всех продуктов дневника есть картинки.'},
   {v:'4.10', d:'2026-10-16', t:'Дневник питания: можно отметить сразу несколько продуктов (в том числе из разных поисков и базы) и добавить их одной кнопкой.'},
   {v:'4.9', d:'2026-10-13', t:'Программа выровнена: 6, 5, 6, 5 упражнений по дням вместо 7, 5, 8, 6. Бицепс на дне 2, носки только на дне 4, сгибание ног только на дне 2. На дне 3 жимы, тяги, плечи и пресс.'},
@@ -1026,7 +1041,7 @@ function delBody(date){ S.body=S.body.filter(x=>x.date!==date); save(); render('
    ФОТО-ОТЧЁТ  (файлы лежат в IndexedDB, в localStorage только список)
    ============================================================ */
 const ANGLES=[['f','Спереди'],['s','Сбоку'],['b','Сзади']];
-let phDate=null, phCmp={a:null,b:null}, phCache={};
+let phDate=null, phCmp={a:null,b:null,angle:'f',mode:'side'}, phCache={}, phPos=50;
 function phDB(){
   return new Promise((res,rej)=>{
     try{
@@ -1088,14 +1103,33 @@ function viewPhotos(){
   if(dates.length){
     const a=phCmp.a&&dates.includes(phCmp.a)?phCmp.a:dates[0];
     const b=phCmp.b&&dates.includes(phCmp.b)?phCmp.b:dates[dates.length-1];
+    const ang=phCmp.angle||'f', mode=phCmp.mode||'side';
     const opts=sel=>dates.map(d=>`<option value="${d}"${d===sel?' selected':''}>${fmtDate(d)} ${d.slice(0,4)}</option>`).join('');
-    const row=d=>`<div class="phgrid" style="margin-top:6px">${ANGLES.map(([x])=>`<div class="phimg" style="cursor:default">${phHas(d,x)?`<img data-pid="${d}|${x}" alt="" onclick="phView('${d}|${x}')">`:'<span style="font-size:12px">нет фото</span>'}</div>`).join('')}</div>`;
+    const lab=d=>fmtDate(d)+' '+d.slice(0,4);
+    const cell=d=>`<div><div class="phimg" onclick="${phHas(d,ang)?`phView('${d}|${ang}')`:''}">${phHas(d,ang)?`<img data-pid="${d}|${ang}" alt="">`:'<span style="font-size:12px">нет фото</span>'}</div><div class="phcap">${lab(d)}</div></div>`;
+    let view;
+    if(mode==='slider'){
+      view = (phHas(a,ang)&&phHas(b,ang))
+        ? `<div class="phslider" onpointerdown="phSlide(event)" onpointermove="phSlide(event)">
+             <img data-pid="${b}|${ang}" alt="">
+             <img class="phtop" data-pid="${a}|${ang}" alt="" style="clip-path:inset(0 ${100-phPos}% 0 0)">
+             <div class="phline" style="left:${phPos}%"></div><div class="phknob" style="left:${phPos}%">⇄</div>
+             <div class="phbadge" style="left:8px">${lab(a)}</div><div class="phbadge" style="right:8px">${lab(b)}</div>
+           </div><div class="phcap">Двигай линию пальцем. Слева «было», справа «стало».</div>`
+        : `<div class="small" style="margin-top:10px">За одну из дат нет фото этого ракурса. Выбери другой ракурс или дату.</div>`;
+    } else {
+      view = `<div class="phpair">${cell(a)}${cell(b)}</div><div class="phcap">Нажми на фото, чтобы открыть на весь экран.</div>`;
+    }
     h+=`<div class="card"><h2>Сравнение</h2>
-      <div class="phlab" style="margin-top:0">Было</div>
-      <select class="phsel" onchange="phCmp.a=this.value;render('body')">${opts(a)}</select>${row(a)}
-      <div class="phlab">Стало</div>
-      <select class="phsel" onchange="phCmp.b=this.value;render('body')">${opts(b)}</select>${row(b)}
-      ${dates.length<2?'<div class="tiny" style="margin-top:8px">Для сравнения нужны фото минимум за две даты.</div>':'<div class="tiny" style="margin-top:8px">Нажми на фото, чтобы открыть на весь экран.</div>'}
+      <div class="phtabs">${ANGLES.map(([x,n])=>`<button class="${x===ang?'on':''}" onclick="phCmp.angle='${x}';render('body')">${n}</button>`).join('')}</div>
+      <div class="phcmprow">
+        <div><div class="phlab" style="margin-top:0">Было</div><select class="phsel" onchange="phCmp.a=this.value;render('body')">${opts(a)}</select></div>
+        <button class="sw" title="Поменять местами" onclick="phCmp.a='${b}';phCmp.b='${a}';render('body')">⇄</button>
+        <div><div class="phlab" style="margin-top:0">Стало</div><select class="phsel" onchange="phCmp.b=this.value;render('body')">${opts(b)}</select></div>
+      </div>
+      <div class="phtabs" style="margin-top:10px"><button class="${mode==='side'?'on':''}" onclick="phCmp.mode='side';render('body')">Рядом</button><button class="${mode==='slider'?'on':''}" onclick="phCmp.mode='slider';render('body')">Шторка</button></div>
+      ${view}
+      ${dates.length<2?'<div class="tiny" style="margin-top:8px">Для сравнения нужны фото минимум за две даты.</div>':''}
     </div>`;
     h+=`<div class="card"><h2>Все фото-отчёты</h2>
       ${dates.slice().reverse().map(d=>`<div class="hist"><div style="flex:1">
@@ -1104,6 +1138,16 @@ function viewPhotos(){
         <button class="btn ghost" onclick="phDelDate('${d}')">удалить</button></div>`).join('')}</div>`;
   }
   return h;
+}
+function phSlide(e){
+  if(e.type==='pointermove'&&!(e.buttons||e.pointerType==='touch')) return;
+  const box=e.currentTarget, r=box.getBoundingClientRect();
+  if(e.type==='pointerdown'){ try{ box.setPointerCapture(e.pointerId); }catch(x){} }
+  phPos=Math.max(0,Math.min(100,(e.clientX-r.left)/r.width*100));
+  const top=box.querySelector('.phtop'), line=box.querySelector('.phline'), knob=box.querySelector('.phknob');
+  if(top) top.style.clipPath='inset(0 '+(100-phPos)+'% 0 0)';
+  if(line) line.style.left=phPos+'%';
+  if(knob) knob.style.left=phPos+'%';
 }
 async function phAdd(a,inp){
   const f=inp.files&&inp.files[0]; if(!f) return;
@@ -1590,7 +1634,7 @@ seedProducts();
 /* ---------- добавление продукта ---------- */
 let foodUI={meal:'b',res:[],loc:[],st:'',sel:null,selSrc:null,tok:0,basket:[]};
 let scanStream=null, scanTimer=null;
-function foodOpenAdd(meal){ foodUI={meal,res:[],loc:[],st:'',sel:null,selSrc:null,tok:0,basket:[]}; render('foodadd'); }
+function foodOpenAdd(meal){ prodEditing=null; foodUI={meal,res:[],loc:[],st:'',sel:null,selSrc:null,tok:0,basket:[]}; render('foodadd'); }
 function foodBack(){ stopScan(); render('food'); }
 function viewFoodAdd(){
   const mn=(MEALS.find(m=>m[0]===foodUI.meal)||[])[1]||'';
@@ -1640,7 +1684,7 @@ function paintResults(){
   foodUI.loc=loc;
   let h=`<div class="card"><h2>Мои продукты</h2>`;
   if(!loc.length) h+=`<div class="tiny">${q?'Среди твоих продуктов такого нет.':'Пока пусто. Найди продукт в базе или введи вручную, он сохранится здесь.'}</div>`;
-  else h+=loc.map((p,i)=>`<div class="hist pick${inBasket(p)?' picked':''}" onclick="foodSel('loc',${i})">${thumb(p)}<div style="min-width:0;flex:1"><b>${esc(p.name)}</b>${prodLine(p)}</div><span class="pickchk">${inBasket(p)?'✓':''}</span></div>`).join('');
+  else h+=loc.map((p,i)=>`<div class="hist pick${inBasket(p)?' picked':''}" onclick="foodSel('loc',${i})">${thumb(p)}<div style="min-width:0;flex:1"><b>${esc(p.name)}</b>${prodLine(p)}</div><button class="btn ghost" style="padding:6px 8px" onclick="event.stopPropagation();prodEdit(${i})">правка</button><span class="pickchk">${inBasket(p)?'✓':''}</span></div>`).join('');
   h+=`</div>`;
   if(foodUI.st) h+=`<div class="banner">${esc(foodUI.st)}</div>`;
   if(foodUI.res.length){
@@ -1683,6 +1727,56 @@ function foodBasketAdd(){
   save(); stopScan(); render('food');
   const c=document.querySelector('.mealcard[data-meal="'+meal+'"]');
   if(c) c.scrollIntoView({block:'center'});
+}
+/* Правка своего продукта: КБЖУ на 100 г и порция по умолчанию */
+let prodEditing=null;
+function prodEdit(i){
+  const p=foodUI.loc[i]; if(!p) return;
+  prodEditing=p; paintProdEdit();
+  const el=document.getElementById('fPick'); if(el) el.scrollIntoView({block:'start',behavior:'smooth'});
+}
+function paintProdEdit(){
+  const el=document.getElementById('fPick'); if(!el) return;
+  const p=prodEditing;
+  if(!p){ el.innerHTML=''; return; }
+  const v=x=>(x==null?'':x);
+  el.innerHTML=`<div class="card" style="border-color:var(--accent)">
+    <h2>Правка продукта</h2>
+    <input id="eName" class="left" type="text" value="${esc(p.name)}" placeholder="Название">
+    <div style="height:6px"></div>
+    <input id="eBrand" class="left" type="text" value="${esc(p.brand||'')}" placeholder="Бренд (необязательно)">
+    <div class="tiny" style="margin:10px 0 4px">Значения на 100 г</div>
+    <div class="setgrid" style="grid-template-columns:repeat(4,1fr)"><div class="hd">Ккал</div><div class="hd">Белки</div><div class="hd">Жиры</div><div class="hd">Углев.</div></div>
+    <div class="setgrid" style="grid-template-columns:repeat(4,1fr)">
+      <input type="number" inputmode="decimal" id="eK" value="${v(p.k)}"><input type="number" inputmode="decimal" id="eP" value="${v(p.p)}">
+      <input type="number" inputmode="decimal" id="eF" value="${v(p.f)}"><input type="number" inputmode="decimal" id="eC" value="${v(p.c)}">
+    </div>
+    <div class="tiny" style="margin:10px 0 4px">Порция по умолчанию, граммы (пусто = 100 г)</div>
+    <input type="number" inputmode="decimal" id="eS" value="${v(p.serv)}" placeholder="например 80">
+    <label class="small" style="display:flex;gap:8px;align-items:center;margin:12px 0"><input type="checkbox" id="eHist" style="width:auto"> Исправить и уже добавленные записи в дневнике</label>
+    <div class="row"><button class="btn" onclick="prodEditSave()">Сохранить</button><button class="btn sec" onclick="prodEditing=null;paintProdEdit()">Отмена</button></div>
+    <div class="tiny" style="margin-top:8px">Без галочки изменится только сам продукт, прошлые записи останутся как были.</div>
+  </div>`;
+}
+function prodEditSave(){
+  const p=prodEditing; if(!p) return;
+  const name=document.getElementById('eName').value.trim();
+  const k=num(document.getElementById('eK').value);
+  if(!name||k==null){ alert('Нужны название и калории на 100 г.'); return; }
+  const oldFull=p.name+(p.brand?' ('+p.brand+')':'');
+  p.name=name; p.brand=document.getElementById('eBrand').value.trim();
+  p.k=Math.round(k);
+  p.p=round(num(document.getElementById('eP').value)||0,1);
+  p.f=round(num(document.getElementById('eF').value)||0,1);
+  p.c=round(num(document.getElementById('eC').value)||0,1);
+  const sv=num(document.getElementById('eS').value); p.serv=sv>0?sv:null;
+  if(document.getElementById('eHist').checked){
+    const newFull=p.name+(p.brand?' ('+p.brand+')':'');
+    Object.values(FD().days).forEach(list=>list.forEach(en=>{
+      if(en.name===oldFull){ en.name=newFull; en.k=p.k; en.p=p.p; en.f=p.f; en.c=p.c; }
+    }));
+  }
+  save(); prodEditing=null; paintProdEdit(); paintResults();
 }
 function paintPick(){
   const el=document.getElementById('fPick'); if(!el) return;
